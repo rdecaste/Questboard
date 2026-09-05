@@ -24,7 +24,6 @@
       height: 100vh;
       object-fit: contain;
       opacity: 0;
-      transition: opacity 1.5s linear;
       background: #000;
       pointer-events: none;
     }
@@ -46,7 +45,6 @@
 
     const DISPLAY_TIME = 30000;       // 30 seconds per quest video
     const LIST_REFRESH_TIME = 60000;  // refresh Cloudinary list every 60 seconds
-    const FADE_TIME = 1500;           // 1.5 second crossfade; must match CSS transition
 
     const LIST_URL =
       `https://res.cloudinary.com/${CLOUD_NAME}/video/list/${TAG}.json`;
@@ -147,23 +145,16 @@
         nextLayer.currentTime = 0;
         await nextLayer.play();
 
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            nextLayer.classList.add("visible");
+        nextLayer.classList.add("visible");
 
-            if (!firstLoad) {
-              currentLayer.classList.remove("visible");
+        if (!firstLoad) {
+          currentLayer.classList.remove("visible");
+          currentLayer.pause();
+          currentLayer.removeAttribute("src");
+          currentLayer.load();
+        }
 
-              setTimeout(() => {
-                currentLayer.pause();
-                currentLayer.removeAttribute("src");
-                currentLayer.load();
-              }, FADE_TIME + 100);
-            }
-
-            activeLayer = nextLayerIndex;
-          });
-        });
+        activeLayer = nextLayerIndex;
       } catch (error) {
         console.error(error);
       }
