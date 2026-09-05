@@ -24,6 +24,7 @@
       height: 100vh;
       object-fit: contain;
       opacity: 0;
+      transition: opacity 1s linear;
       background: #000;
       pointer-events: none;
     }
@@ -45,6 +46,7 @@
 
     const DISPLAY_TIME = 30000;       // 30 seconds per quest video
     const LIST_REFRESH_TIME = 60000;  // refresh Cloudinary list every 60 seconds
+    const FADE_TIME = 1000;           // 1 second crossfade
 
     const LIST_URL =
       `https://res.cloudinary.com/${CLOUD_NAME}/video/list/${TAG}.json`;
@@ -60,6 +62,8 @@
       document.getElementById("questA"),
       document.getElementById("questB")
     ];
+
+    const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
     function buildVideoUrl(resource) {
       return `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/v${resource.version}/${resource.public_id}.${resource.format}`;
@@ -173,15 +177,19 @@
 
         nextLayer.classList.add("visible");
         endedLayer.classList.remove("visible");
+
+        await wait(FADE_TIME);
+
         endedLayer.pause();
         endedLayer.currentTime = 0;
-
         activeLayer = nextLayerIndex;
       } catch (error) {
         console.error("Could not hand off seamless loop:", error);
       } finally {
         switching = false;
       }
+
+      await primeStandbyLayer(currentUrl);
     }
 
     layers.forEach(video => {
@@ -205,6 +213,7 @@
 
         if (!firstLoad && currentLayer !== nextLayer) {
           currentLayer.classList.remove("visible");
+          await wait(FADE_TIME);
           currentLayer.pause();
         }
 
