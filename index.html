@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Seamless Looping Video</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .stage {
+      position: fixed;
+      inset: 0;
+      background: #000;
+    }
+
+    video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #000;
+      opacity: 0;
+      transition: opacity 1.5s linear;
+    }
+
+    video.active {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <video id="videoA" class="active" muted playsinline preload="auto">
+      <source src="https://res.cloudinary.com/a3xk0plk/video/upload/v1788556856/puyiqm9hcjlprl4gzonb.mp4" type="video/mp4" />
+    </video>
+    <video id="videoB" muted playsinline preload="auto">
+      <source src="https://res.cloudinary.com/a3xk0plk/video/upload/v1788556856/puyiqm9hcjlprl4gzonb.mp4" type="video/mp4" />
+    </video>
+  </div>
+
+  <script>
+    const FADE_SECONDS = 1.5;
+
+    const videos = [
+      document.getElementById("videoA"),
+      document.getElementById("videoB")
+    ];
+
+    let activeIndex = 0;
+    let fading = false;
+
+    videos.forEach(v => {
+      v.muted = true;
+      v.playsInline = true;
+    });
+
+    async function startPlayback() {
+      try {
+        videos[0].currentTime = 0;
+        await videos[0].play();
+      } catch (e) {
+        document.addEventListener("touchstart", () => videos[0].play(), { once: true });
+        document.addEventListener("click", () => videos[0].play(), { once: true });
+      }
+      monitor();
+    }
+
+    function monitor() {
+      const current = videos[activeIndex];
+
+      if (
+        !fading &&
+        Number.isFinite(current.duration) &&
+        current.duration > FADE_SECONDS &&
+        current.currentTime >= current.duration - FADE_SECONDS
+      ) {
+        crossfade();
+      }
+
+      requestAnimationFrame(monitor);
+    }
+
+    async function crossfade() {
+      fading = true;
+
+      const outgoingIndex = activeIndex;
+      const incomingIndex = 1 - activeIndex;
+      const outgoing = videos[outgoingIndex];
+      const incoming = videos[incomingIndex];
+
+      incoming.currentTime = 0;
+
+      try {
+        await incoming.play();
+      } catch (e) {}
+
+      incoming.classList.add("active");
+      outgoing.classList.remove("active");
+
+      setTimeout(() => {
+        outgoing.pause();
+        outgoing.currentTime = 0;
+        activeIndex = incomingIndex;
+        fading = false;
+      }, FADE_SECONDS * 1000);
+    }
+
+    startPlayback();
+  </script>
+</body>
+</html>
