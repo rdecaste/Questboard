@@ -37,6 +37,7 @@
 <body>
   <video id="questA" class="quest-video" muted playsinline preload="auto"></video>
   <video id="questB" class="quest-video" muted playsinline preload="auto"></video>
+  <audio id="questAudio" preload="auto" autoplay loop></audio>
 
   <script>
     const CLOUD_NAME = "a3xk0plk";
@@ -68,9 +69,42 @@
       document.getElementById("questB")
     ];
 
+    const audio = document.getElementById("questAudio");
+    audio.volume = 1;
+
     function buildVideoUrl(resource) {
       return `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/v${resource.version}/${resource.public_id}.${resource.format}`;
     }
+
+    async function playAudio(url, restart = true) {
+      try {
+        const absoluteUrl = new URL(url, window.location.href).href;
+
+        if (audio.src !== absoluteUrl) {
+          audio.src = url;
+          audio.load();
+        }
+
+        if (restart) {
+          try { audio.currentTime = 0; } catch (_) {}
+        }
+
+        await audio.play();
+      } catch (error) {
+        console.warn("Audio autoplay blocked; waiting for kiosk/browser permission or one user interaction.", error);
+      }
+    }
+
+    // If the WebView blocks audible autoplay, one interaction unlocks the single
+    // persistent audio element. Future visual loop swaps do not restart audio.
+    function unlockAudio() {
+      if (currentUrl) playAudio(currentUrl, false);
+      document.removeEventListener("pointerdown", unlockAudio);
+      document.removeEventListener("touchstart", unlockAudio);
+    }
+
+    document.addEventListener("pointerdown", unlockAudio, { passive: true });
+    document.addEventListener("touchstart", unlockAudio, { passive: true });
 
     async function refreshQuestList() {
       try {
@@ -195,8 +229,7 @@
       const nextLayer = layers[nextLayerIndex];
 
       try {
-        // The hidden layer is already playing and decoded.
-        // Only swap visibility; do not call play(), seek, or load at the boundary.
+        // Audio is handled by the persistent audio element and is not touched here.
         nextLayer.classList.add("visible");
         currentLayer.classList.remove("visible");
 
@@ -212,7 +245,6 @@
         loopSwapPending = false;
       }
 
-      // Prepare the old layer for the next overlap while the new layer keeps playing.
       await primeStandbyLayer(currentUrl);
     }
 
@@ -265,6 +297,10 @@
 
         activeLayer = nextLayerIndex;
         currentUrl = url;
+
+        // One persistent audible player per quest. It loops independently from
+        // the muted double-buffered visual layers.
+        playAudio(url, true);
       } catch (error) {
         console.error(error);
       } finally {
