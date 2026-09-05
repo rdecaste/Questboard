@@ -35,8 +35,8 @@
 </head>
 
 <body>
-  <video id="questA" class="quest-video" playsinline preload="auto"></video>
-  <video id="questB" class="quest-video" playsinline preload="auto"></video>
+  <video id="questA" class="quest-video" muted playsinline preload="auto"></video>
+  <video id="questB" class="quest-video" muted playsinline preload="auto"></video>
 
   <script>
     const CLOUD_NAME = "a3xk0plk";
@@ -67,10 +67,6 @@
       document.getElementById("questA"),
       document.getElementById("questB")
     ];
-
-    // Only the visible/active layer is ever audible.
-    layers[0].muted = false;
-    layers[1].muted = true;
 
     function buildVideoUrl(resource) {
       return `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/v${resource.version}/${resource.public_id}.${resource.format}`;
@@ -161,7 +157,6 @@
     async function primeStandbyLayer(url) {
       const standbyLayer = layers[1 - activeLayer];
       try {
-        standbyLayer.muted = true;
         await prepareVideo(standbyLayer, url);
         standbyLayer.pause();
         standbyLayer.currentTime = 0;
@@ -177,8 +172,6 @@
       const standby = layers[1 - activeLayer];
 
       try {
-        standby.muted = true;
-
         if (standby.readyState < 3) {
           await prepareVideo(standby, currentUrl);
         }
@@ -203,12 +196,10 @@
 
       try {
         // The hidden layer is already playing and decoded.
-        // Switch visibility and audio together; no play(), seek, or load at the boundary.
+        // Only swap visibility; do not call play(), seek, or load at the boundary.
         nextLayer.classList.add("visible");
-        nextLayer.muted = false;
-
-        currentLayer.muted = true;
         currentLayer.classList.remove("visible");
+
         currentLayer.pause();
         currentLayer.currentTime = 0;
 
@@ -260,17 +251,13 @@
       const currentLayer = layers[activeLayer];
 
       try {
-        // Keep loading/preparing silent. Unmute only when this becomes the active layer.
-        nextLayer.muted = true;
         await prepareVideo(nextLayer, url);
 
         nextLayer.currentTime = 0;
         await nextLayer.play();
         nextLayer.classList.add("visible");
-        nextLayer.muted = false;
 
         if (!firstLoad && currentLayer !== nextLayer) {
-          currentLayer.muted = true;
           currentLayer.classList.remove("visible");
           currentLayer.pause();
           currentLayer.currentTime = 0;
