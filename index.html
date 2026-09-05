@@ -43,9 +43,13 @@
     const TAG = "quest-board-animated";
     const FOLDER_PREFIX = "Quest-Board-Animated/";
 
-    const DISPLAY_TIME = 30000;       // 30 seconds per quest video
-    const LIST_REFRESH_TIME = 60000;  // refresh Cloudinary list every 60 seconds
-    const LOOP_HANDOFF_TIME = 0.12;   // switch shortly before the active video actually ends
+    const DISPLAY_TIME = 30000;
+    const LIST_REFRESH_TIME = 60000;
+
+    // Generated clips are designed so the last 1 second matches the first 1 second.
+    // Start the hidden copy 1 second before the end, then swap near the end.
+    const LOOP_OVERLAP = 1.0;
+    const LOOP_SWAP_REMAINING = 0.08;
 
     const LIST_URL =
       `https://res.cloudinary.com/${CLOUD_NAME}/video/list/${TAG}.json`;
@@ -56,6 +60,7 @@
     let started = false;
     let currentUrl = "";
     let switching = false;
+    let standbyRunning = false;
     let loopSwapPending = false;
 
     const layers = [
@@ -155,36 +160,51 @@
         await prepareVideo(standbyLayer, url);
         standbyLayer.pause();
         standbyLayer.currentTime = 0;
+        standbyRunning = false;
       } catch (error) {
         console.error("Could not prime standby loop layer:", error);
       }
     }
 
+    async function startStandbyPlayback() {
+      if (switching || standbyRunning || !currentUrl) return;
+
+      const standby = layers[1 - activeLayer];
+
+      try {
+        if (standby.readyState < 3) {
+          await prepareVideo(standby, currentUrl);
+        }
+
+        standby.currentTime = 0;
+        await standby.play();
+        standbyRunning = true;
+      } catch (error) {
+        console.error("Could not start standby loop playback:", error);
+      }
+    }
+
     async function handoffLoop() {
-      if (switching || loopSwapPending || !currentUrl) return;
+      if (switching || loopSwapPending || !standbyRunning || !currentUrl) return;
+
+      loopSwapPending = true;
+      switching = true;
 
       const currentLayer = layers[activeLayer];
       const nextLayerIndex = 1 - activeLayer;
       const nextLayer = layers[nextLayerIndex];
 
-      loopSwapPending = true;
-      switching = true;
-
       try {
-        if (nextLayer.readyState < 3) {
-          await prepareVideo(nextLayer, currentUrl);
-        }
-
-        nextLayer.currentTime = 0;
-        await nextLayer.play();
-
-        // Instant visual handoff: no opacity transition, no black dip.
+        // The hidden layer is already playing and decoded.
+        // Only swap visibility; do not call play(), seek, or load at the boundary.
         nextLayer.classList.add("visible");
         currentLayer.classList.remove("visible");
 
         currentLayer.pause();
         currentLayer.currentTime = 0;
+
         activeLayer = nextLayerIndex;
+        standbyRunning = false;
       } catch (error) {
         console.error("Could not hand off seamless loop:", error);
       } finally {
@@ -192,6 +212,7 @@
         loopSwapPending = false;
       }
 
+      // Prepare the old layer for the next overlap while the new layer keeps playing.
       await primeStandbyLayer(currentUrl);
     }
 
@@ -200,14 +221,20 @@
 
       if (
         !switching &&
-        !loopSwapPending &&
         currentUrl &&
         Number.isFinite(active.duration) &&
         active.duration > 0 &&
-        !active.paused &&
-        active.duration - active.currentTime <= LOOP_HANDOFF_TIME
+        !active.paused
       ) {
-        handoffLoop();
+        const remaining = active.duration - active.currentTime;
+
+        if (!standbyRunning && remaining <= LOOP_OVERLAP) {
+          startStandbyPlayback();
+        }
+
+        if (standbyRunning && !loopSwapPending && remaining <= LOOP_SWAP_REMAINING) {
+          handoffLoop();
+        }
       }
 
       requestAnimationFrame(monitorLoop);
@@ -216,6 +243,7 @@
     async function showQuest(url, firstLoad = false) {
       if (switching) return;
       switching = true;
+      standbyRunning = false;
       loopSwapPending = false;
 
       const nextLayerIndex = firstLoad ? activeLayer : 1 - activeLayer;
