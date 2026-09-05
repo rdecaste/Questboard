@@ -42,6 +42,7 @@
   <script>
     const CLOUD_NAME = "a3xk0plk";
     const TAG = "quest-board-animated";
+    const FOLDER_PREFIX = "Quest-Board-Animated/";
 
     const DISPLAY_TIME = 30000;       // 30 seconds per quest video
     const LIST_REFRESH_TIME = 60000;  // refresh Cloudinary list every 60 seconds
@@ -77,19 +78,30 @@
 
         const data = await response.json();
 
-        const newQuests = (data.resources || []).map(resource => ({
-          publicId: resource.public_id,
-          version: resource.version,
-          url: buildVideoUrl(resource)
-        }));
+        const newQuests = (data.resources || [])
+          .filter(resource =>
+            resource.public_id &&
+            resource.public_id.startsWith(FOLDER_PREFIX)
+          )
+          .map(resource => ({
+            publicId: resource.public_id,
+            version: resource.version,
+            url: buildVideoUrl(resource)
+          }));
 
-        if (!newQuests.length) return;
+        if (!newQuests.length) {
+          console.warn(`No tagged videos found in ${FOLDER_PREFIX}`);
+          return;
+        }
 
         quests = newQuests;
 
+        if (currentIndex >= quests.length) {
+          currentIndex = 0;
+        }
+
         if (!started) {
           started = true;
-          currentIndex = 0;
           showQuest(quests[currentIndex].url, true);
         }
       } catch (error) {
