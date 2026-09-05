@@ -45,6 +45,7 @@
 
     const DISPLAY_TIME = 30000;       // 30 seconds per quest video
     const LIST_REFRESH_TIME = 60000;  // refresh Cloudinary list every 60 seconds
+    const LOOP_HANDOFF_TIME = 0.12;   // switch shortly before the active video actually ends
 
     const LIST_URL =
       `https://res.cloudinary.com/${CLOUD_NAME}/video/list/${TAG}.json`;
@@ -55,6 +56,7 @@
     let started = false;
     let currentUrl = "";
     let switching = false;
+    let loopSwapPending = false;
 
     const layers = [
       document.getElementById("questA"),
@@ -158,39 +160,63 @@
       }
     }
 
-    async function handoffLoop(endedLayer) {
-      if (switching || endedLayer !== layers[activeLayer] || !currentUrl) return;
+    async function handoffLoop() {
+      if (switching || loopSwapPending || !currentUrl) return;
 
-      switching = true;
-
+      const currentLayer = layers[activeLayer];
       const nextLayerIndex = 1 - activeLayer;
       const nextLayer = layers[nextLayerIndex];
 
+      loopSwapPending = true;
+      switching = true;
+
       try {
-        await prepareVideo(nextLayer, currentUrl);
+        if (nextLayer.readyState < 3) {
+          await prepareVideo(nextLayer, currentUrl);
+        }
+
         nextLayer.currentTime = 0;
         await nextLayer.play();
 
+        // Instant visual handoff: no opacity transition, no black dip.
         nextLayer.classList.add("visible");
-        endedLayer.classList.remove("visible");
-        endedLayer.pause();
-        endedLayer.currentTime = 0;
+        currentLayer.classList.remove("visible");
 
+        currentLayer.pause();
+        currentLayer.currentTime = 0;
         activeLayer = nextLayerIndex;
       } catch (error) {
         console.error("Could not hand off seamless loop:", error);
       } finally {
         switching = false;
+        loopSwapPending = false;
       }
+
+      await primeStandbyLayer(currentUrl);
     }
 
-    layers.forEach(video => {
-      video.addEventListener("ended", () => handoffLoop(video));
-    });
+    function monitorLoop() {
+      const active = layers[activeLayer];
+
+      if (
+        !switching &&
+        !loopSwapPending &&
+        currentUrl &&
+        Number.isFinite(active.duration) &&
+        active.duration > 0 &&
+        !active.paused &&
+        active.duration - active.currentTime <= LOOP_HANDOFF_TIME
+      ) {
+        handoffLoop();
+      }
+
+      requestAnimationFrame(monitorLoop);
+    }
 
     async function showQuest(url, firstLoad = false) {
       if (switching) return;
       switching = true;
+      loopSwapPending = false;
 
       const nextLayerIndex = firstLoad ? activeLayer : 1 - activeLayer;
       const nextLayer = layers[nextLayerIndex];
@@ -206,6 +232,7 @@
         if (!firstLoad && currentLayer !== nextLayer) {
           currentLayer.classList.remove("visible");
           currentLayer.pause();
+          currentLayer.currentTime = 0;
         }
 
         activeLayer = nextLayerIndex;
@@ -227,6 +254,7 @@
     }
 
     refreshQuestList();
+    requestAnimationFrame(monitorLoop);
 
     setInterval(nextQuest, DISPLAY_TIME);
     setInterval(refreshQuestList, LIST_REFRESH_TIME);
