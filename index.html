@@ -47,10 +47,12 @@
     const DISPLAY_TIME = 30000;
     const LIST_REFRESH_TIME = 60000;
 
-    // Generated clips are designed so the last 1 second matches the first 1 second.
-    // Start the hidden copy 1 second before the end, then swap near the end.
-    const LOOP_OVERLAP = 1.0;
-    const LOOP_SWAP_REMAINING = 0.08;
+    // Audio is the master clock.
+    // The standby video is warmed before the boundary, then the visual layer
+    // swaps shortly before the audio loops. This prevents cumulative drift.
+    const WARM_STANDBY_REMAINING = 0.50;
+    const VISUAL_SWAP_REMAINING = 0.06;
+    const MAX_SYNC_DRIFT = 0.12;
 
     const LIST_URL =
       `https://res.cloudinary.com/${CLOUD_NAME}/video/list/${TAG}.json`;
@@ -61,8 +63,9 @@
     let started = false;
     let currentUrl = "";
     let switching = false;
-    let standbyRunning = false;
-    let loopSwapPending = false;
+    let standbyWarmed = false;
+    let visualSwapDone = false;
+    let lastAudioTime = 0;
 
     const layers = [
       document.getElementById("questA"),
@@ -95,8 +98,6 @@
       }
     }
 
-    // If the WebView blocks audible autoplay, one interaction unlocks the single
-    // persistent audio element. Future visual loop swaps do not restart audio.
     function unlockAudio() {
       if (currentUrl) playAudio(currentUrl, false);
       document.removeEventListener("pointerdown", unlockAudio);
@@ -189,20 +190,21 @@
     }
 
     async function primeStandbyLayer(url) {
-      const standbyLayer = layers[1 - activeLayer];
+      const standby = layers[1 - activeLayer];
       try {
-        await prepareVideo(standbyLayer, url);
-        standbyLayer.pause();
-        standbyLayer.currentTime = 0;
-        standbyRunning = false;
+        await prepareVideo(standby, url);
+        standby.pause();
+        standby.currentTime = 0;
+        standbyWarmed = false;
       } catch (error) {
-        console.error("Could not prime standby loop layer:", error);
+        console.error("Could not prime standby layer:", error);
       }
     }
 
-    async function startStandbyPlayback() {
-      if (switching || standbyRunning || !currentUrl) return;
+    async function warmStandby() {
+      if (standbyWarmed || switching || !currentUrl) return;
 
+      standbyWarmed = true;
       const standby = layers[1 - activeLayer];
 
       try {
@@ -212,95 +214,123 @@
 
         standby.currentTime = 0;
         await standby.play();
-        standbyRunning = true;
+
+        // Let the decoder produce frames while hidden, then reset to frame 0.
+        setTimeout(() => {
+          if (standby !== layers[activeLayer]) {
+            standby.pause();
+            standby.currentTime = 0;
+          }
+        }, 120);
       } catch (error) {
-        console.error("Could not start standby loop playback:", error);
+        console.error("Could not warm standby layer:", error);
       }
     }
 
-    async function handoffLoop() {
-      if (switching || loopSwapPending || !standbyRunning || !currentUrl) return;
+    async function swapVisualAtAudioBoundary() {
+      if (switching || visualSwapDone || !currentUrl) return;
 
-      loopSwapPending = true;
       switching = true;
+      visualSwapDone = true;
 
-      const currentLayer = layers[activeLayer];
-      const nextLayerIndex = 1 - activeLayer;
-      const nextLayer = layers[nextLayerIndex];
+      const current = layers[activeLayer];
+      const nextIndex = 1 - activeLayer;
+      const next = layers[nextIndex];
 
       try {
-        // Audio is handled by the persistent audio element and is not touched here.
-        nextLayer.classList.add("visible");
-        currentLayer.classList.remove("visible");
+        if (next.readyState < 3) {
+          await prepareVideo(next, currentUrl);
+        }
 
-        currentLayer.pause();
-        currentLayer.currentTime = 0;
+        next.currentTime = 0;
+        await next.play();
 
-        activeLayer = nextLayerIndex;
-        standbyRunning = false;
+        // Instant visual swap. Audio continues untouched as the master clock.
+        next.classList.add("visible");
+        current.classList.remove("visible");
+        current.pause();
+        current.currentTime = 0;
+
+        activeLayer = nextIndex;
       } catch (error) {
-        console.error("Could not hand off seamless loop:", error);
+        console.error("Could not swap visual layer:", error);
       } finally {
         switching = false;
-        loopSwapPending = false;
       }
-
-      await primeStandbyLayer(currentUrl);
     }
 
-    function monitorLoop() {
-      const active = layers[activeLayer];
-
+    function monitorSync() {
       if (
-        !switching &&
         currentUrl &&
-        Number.isFinite(active.duration) &&
-        active.duration > 0 &&
-        !active.paused
+        !audio.paused &&
+        Number.isFinite(audio.duration) &&
+        audio.duration > 0
       ) {
-        const remaining = active.duration - active.currentTime;
+        const audioTime = audio.currentTime;
+        const remaining = audio.duration - audioTime;
+        const active = layers[activeLayer];
 
-        if (!standbyRunning && remaining <= LOOP_OVERLAP) {
-          startStandbyPlayback();
+        // Detect the audio loop boundary. This resets all per-loop flags and
+        // makes every visual cycle start from the audio clock again.
+        if (audioTime + 0.25 < lastAudioTime) {
+          visualSwapDone = false;
+          standbyWarmed = false;
+          primeStandbyLayer(currentUrl);
         }
 
-        if (standbyRunning && !loopSwapPending && remaining <= LOOP_SWAP_REMAINING) {
-          handoffLoop();
+        if (!standbyWarmed && remaining <= WARM_STANDBY_REMAINING) {
+          warmStandby();
         }
+
+        if (!visualSwapDone && remaining <= VISUAL_SWAP_REMAINING) {
+          swapVisualAtAudioBoundary();
+        }
+
+        // Outside the loop boundary, correct meaningful drift instead of
+        // allowing it to accumulate across iterations.
+        if (
+          !switching &&
+          !active.paused &&
+          remaining > 0.5 &&
+          Math.abs(active.currentTime - audioTime) > MAX_SYNC_DRIFT
+        ) {
+          try { active.currentTime = audioTime; } catch (_) {}
+        }
+
+        lastAudioTime = audioTime;
       }
 
-      requestAnimationFrame(monitorLoop);
+      requestAnimationFrame(monitorSync);
     }
 
     async function showQuest(url, firstLoad = false) {
       if (switching) return;
       switching = true;
-      standbyRunning = false;
-      loopSwapPending = false;
+      standbyWarmed = false;
+      visualSwapDone = false;
+      lastAudioTime = 0;
 
-      const nextLayerIndex = firstLoad ? activeLayer : 1 - activeLayer;
-      const nextLayer = layers[nextLayerIndex];
-      const currentLayer = layers[activeLayer];
+      const nextIndex = firstLoad ? activeLayer : 1 - activeLayer;
+      const next = layers[nextIndex];
+      const current = layers[activeLayer];
 
       try {
-        await prepareVideo(nextLayer, url);
+        await prepareVideo(next, url);
 
-        nextLayer.currentTime = 0;
-        await nextLayer.play();
-        nextLayer.classList.add("visible");
+        next.currentTime = 0;
+        await next.play();
+        next.classList.add("visible");
 
-        if (!firstLoad && currentLayer !== nextLayer) {
-          currentLayer.classList.remove("visible");
-          currentLayer.pause();
-          currentLayer.currentTime = 0;
+        if (!firstLoad && current !== next) {
+          current.classList.remove("visible");
+          current.pause();
+          current.currentTime = 0;
         }
 
-        activeLayer = nextLayerIndex;
+        activeLayer = nextIndex;
         currentUrl = url;
 
-        // One persistent audible player per quest. It loops independently from
-        // the muted double-buffered visual layers.
-        playAudio(url, true);
+        await playAudio(url, true);
       } catch (error) {
         console.error(error);
       } finally {
@@ -318,7 +348,7 @@
     }
 
     refreshQuestList();
-    requestAnimationFrame(monitorLoop);
+    requestAnimationFrame(monitorSync);
 
     setInterval(nextQuest, DISPLAY_TIME);
     setInterval(refreshQuestList, LIST_REFRESH_TIME);
