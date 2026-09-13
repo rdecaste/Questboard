@@ -275,7 +275,11 @@
 
     function loadQuestVideo(quest) {
       const videoUrl = quest?.url || "";
-      const videoKey = String(quest?.id || videoUrl);
+      const videoKey = String(
+        quest?.videoPublicId ||
+        quest?.videoVersion ||
+        videoUrl
+      );
 
       if (!videoUrl || videoKey === loadedVideoKey) return;
 
@@ -327,7 +331,9 @@
         .filter(item => item && item.id)
         .map(item => ({
           id: item.id,
-          url: buildVideoUrl(item.id),
+          url: item.video_url || buildVideoUrl(item.id),
+          videoPublicId: item.video_public_id || "",
+          videoVersion: item.video_version || "",
           overlay: item
         }));
 
