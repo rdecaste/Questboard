@@ -277,6 +277,9 @@
 
     function renderOverlay(quest) {
       const d = quest?.overlay || {};
+      const hasOverlay = Boolean(quest?.overlay);
+      document.querySelector(".panel").classList.toggle("hidden", !hasOverlay);
+      el.quoteBlock.classList.toggle("hidden", !hasOverlay || !d.quote);
 
       el.title.textContent = d.questTitle || "";
       el.status.textContent = d.status || "NOT ENOUGH INFORMATION";
@@ -291,7 +294,7 @@
 
       el.quote.textContent = d.quote ? `“${d.quote}”` : "";
       el.author.textContent = d.quoteAuthor || "";
-      el.quoteBlock.classList.toggle("hidden", !d.quote);
+      el.quoteBlock.classList.toggle("hidden", !hasOverlay || !d.quote);
     }
 
     async function refreshOverlayData() {
@@ -339,7 +342,7 @@
               overlay: overlaysById.get(normalizeId(id))
             };
           })
-          .filter(q => q.overlay);
+          ;
 
         if (!newQuests.length) {
           console.warn("No active quest videos with matching overlay data found.");
