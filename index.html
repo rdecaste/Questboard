@@ -24,13 +24,11 @@
       width: 100vw;
       height: 100vh;
       object-fit: cover;
-      opacity: 0;
+      object-position: center;
       background: #000;
+      display: block;
       pointer-events: none;
-      transition: opacity 320ms ease;
     }
-
-    .quest-video.visible { opacity: 1; }
 
     .shade {
       position: fixed;
@@ -169,9 +167,7 @@
 </head>
 
 <body>
-  <video id="questA" class="quest-video" muted playsinline preload="auto"></video>
-  <video id="questB" class="quest-video" muted playsinline preload="auto"></video>
-  <audio id="questAudio" preload="auto" autoplay loop></audio>
+  <video id="questVideo" class="quest-video" autoplay muted loop playsinline preload="auto"></video>
 
   <div class="shade"></div>
 
@@ -209,28 +205,13 @@
     const DISPLAY_TIME = 30000;
     const LIST_REFRESH_TIME = 60000;
 
-    const WARM_STANDBY_REMAINING = 0.50;
-    const VISUAL_SWAP_REMAINING = 0.06;
-    const MAX_SYNC_DRIFT = 0.12;
+    const video = document.getElementById("questVideo");
 
     let overlayData = [];
     let quests = [];
     let currentIndex = 0;
-    let activeLayer = 0;
     let started = false;
-    let currentUrl = "";
-    let switching = false;
-    let standbyWarmed = false;
-    let visualSwapDone = false;
-    let lastAudioTime = 0;
-
-    const layers = [
-      document.getElementById("questA"),
-      document.getElementById("questB")
-    ];
-
-    const audio = document.getElementById("questAudio");
-    audio.volume = 1;
+    let loadedVideoKey = "";
 
     const el = {
       title: document.getElementById("questTitle"),
@@ -245,16 +226,8 @@
       author: document.getElementById("quoteAuthor")
     };
 
-    function normalizeId(value = "") {
-      return String(value).replace(/-/g, "").toLowerCase();
-    }
-
-    function getResourceId(publicId = "") {
-      return publicId.split("/").pop() || "";
-    }
-
     function buildVideoUrl(id) {
-      return `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/f_mp4,vc_h264,ac_none,q_auto/${VIDEO_PREFIX}${id}.mp4`;
+      return `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/${VIDEO_PREFIX}${id}.mp4`;
     }
 
     function formatUpdated(value) {
@@ -275,6 +248,7 @@
     function renderOverlay(quest) {
       const d = quest?.overlay || {};
       const hasOverlay = Boolean(quest?.overlay);
+
       document.querySelector(".panel").classList.toggle("hidden", !hasOverlay);
       el.quoteBlock.classList.toggle("hidden", !hasOverlay || !d.quote);
 
@@ -292,6 +266,25 @@
       el.quote.textContent = d.quote ? `“${d.quote}”` : "";
       el.author.textContent = d.quoteAuthor || "";
       el.quoteBlock.classList.toggle("hidden", !hasOverlay || !d.quote);
+    }
+
+    function loadQuestVideo(quest) {
+      const videoUrl = quest?.url || "";
+      const videoKey = String(quest?.id || videoUrl);
+
+      if (!videoUrl || videoKey === loadedVideoKey) return;
+
+      loadedVideoKey = videoKey;
+
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+
+      video.src = videoUrl;
+      video.load();
+      video.play().catch(error => {
+        console.warn("Video autoplay failed", error);
+      });
     }
 
     async function refreshOverlayData() {
@@ -312,253 +305,49 @@
     }
 
     async function refreshQuestList() {
-      try {
-        await refreshOverlayData();
+      await refreshOverlayData();
 
-        const newQuests = overlayData
-          .filter(item => item && item.id)
-          .map(item => ({
-            id: item.id,
-            publicId: `${VIDEO_PREFIX}${item.id}`,
-            url: buildVideoUrl(item.id),
-            overlay: item
-          }));
+      const newQuests = overlayData
+        .filter(item => item && item.id)
+        .map(item => ({
+          id: item.id,
+          url: buildVideoUrl(item.id),
+          overlay: item
+        }));
 
-        if (!newQuests.length) {
-          console.warn("No active quests found in live data.");
-          return;
-        }
+      if (!newQuests.length) return;
 
-        quests = newQuests;
+      const currentId = quests[currentIndex]?.id;
+      quests = newQuests;
 
-        if (currentIndex >= quests.length) currentIndex = 0;
-
-        if (!started) {
-          started = true;
-          renderOverlay(quests[currentIndex]);
-          await showQuest(quests[currentIndex].url, true);
-        } else {
-          const currentId = normalizeId(quests[currentIndex]?.id);
-          const refreshed = quests.find(q => normalizeId(q.id) === currentId);
-          if (refreshed) renderOverlay(refreshed);
-        }
-      } catch (error) {
-        console.error("Could not refresh active quest list:", error);
-      }
-    }
-
-    async function playAudio(url, restart = true) {
-      try {
-        const absoluteUrl = new URL(url, window.location.href).href;
-
-        if (audio.src !== absoluteUrl) {
-          audio.src = url;
-          audio.load();
-        }
-
-        if (restart) {
-          try { audio.currentTime = 0; } catch (_) {}
-        }
-
-        await audio.play();
-      } catch (error) {
-        console.warn("Audio autoplay blocked.", error);
-      }
-    }
-
-    function unlockAudio() {
-      if (currentUrl) playAudio(currentUrl, false);
-      document.removeEventListener("pointerdown", unlockAudio);
-      document.removeEventListener("touchstart", unlockAudio);
-    }
-
-    document.addEventListener("pointerdown", unlockAudio, { passive: true });
-    document.addEventListener("touchstart", unlockAudio, { passive: true });
-
-    function prepareVideo(video, url) {
-      return new Promise((resolve, reject) => {
-        video.pause();
-        video.classList.remove("visible");
-
-        const absoluteUrl = new URL(url, window.location.href).href;
-        if (video.src !== absoluteUrl) {
-          video.src = url;
-          video.load();
-        }
-
-        if (video.readyState >= 3) {
-          try { video.currentTime = 0; } catch (_) {}
-          resolve();
-          return;
-        }
-
-        const onReady = () => {
-          cleanup();
-          try { video.currentTime = 0; } catch (_) {}
-          resolve();
-        };
-
-        const onError = () => {
-          cleanup();
-          reject(new Error(`Could not load video: ${url}`));
-        };
-
-        const cleanup = () => {
-          video.removeEventListener("canplay", onReady);
-          video.removeEventListener("error", onError);
-        };
-
-        video.addEventListener("canplay", onReady, { once: true });
-        video.addEventListener("error", onError, { once: true });
-      });
-    }
-
-    async function primeStandbyLayer(url) {
-      const standby = layers[1 - activeLayer];
-      try {
-        await prepareVideo(standby, url);
-        standby.pause();
-        standby.currentTime = 0;
-        standbyWarmed = false;
-      } catch (error) {
-        console.error("Could not prime standby layer:", error);
-      }
-    }
-
-    async function warmStandby() {
-      if (standbyWarmed || switching || !currentUrl) return;
-
-      standbyWarmed = true;
-      const standby = layers[1 - activeLayer];
-
-      try {
-        if (standby.readyState < 3) await prepareVideo(standby, currentUrl);
-        standby.currentTime = 0;
-        await standby.play();
-
-        setTimeout(() => {
-          if (standby !== layers[activeLayer]) {
-            standby.pause();
-            standby.currentTime = 0;
-          }
-        }, 120);
-      } catch (error) {
-        console.error("Could not warm standby layer:", error);
-      }
-    }
-
-    async function swapVisualAtAudioBoundary() {
-      if (switching || visualSwapDone || !currentUrl) return;
-
-      switching = true;
-      visualSwapDone = true;
-
-      const current = layers[activeLayer];
-      const nextIndex = 1 - activeLayer;
-      const next = layers[nextIndex];
-
-      try {
-        if (next.readyState < 3) await prepareVideo(next, currentUrl);
-
-        next.currentTime = 0;
-        await next.play();
-
-        next.classList.add("visible");
-        current.classList.remove("visible");
-        current.pause();
-        current.currentTime = 0;
-
-        activeLayer = nextIndex;
-      } catch (error) {
-        console.error("Could not swap visual layer:", error);
-      } finally {
-        switching = false;
-      }
-    }
-
-    function monitorSync() {
-      if (
-        currentUrl &&
-        !audio.paused &&
-        Number.isFinite(audio.duration) &&
-        audio.duration > 0
-      ) {
-        const audioTime = audio.currentTime;
-        const remaining = audio.duration - audioTime;
-        const active = layers[activeLayer];
-
-        if (audioTime + 0.25 < lastAudioTime) {
-          visualSwapDone = false;
-          standbyWarmed = false;
-          primeStandbyLayer(currentUrl);
-        }
-
-        if (!standbyWarmed && remaining <= WARM_STANDBY_REMAINING) warmStandby();
-        if (!visualSwapDone && remaining <= VISUAL_SWAP_REMAINING) swapVisualAtAudioBoundary();
-
-        if (
-          !switching &&
-          !active.paused &&
-          remaining > 0.5 &&
-          Math.abs(active.currentTime - audioTime) > MAX_SYNC_DRIFT
-        ) {
-          try { active.currentTime = audioTime; } catch (_) {}
-        }
-
-        lastAudioTime = audioTime;
+      if (currentId) {
+        const sameIndex = quests.findIndex(q => q.id === currentId);
+        if (sameIndex >= 0) currentIndex = sameIndex;
       }
 
-      requestAnimationFrame(monitorSync);
-    }
+      if (currentIndex >= quests.length) currentIndex = 0;
 
-    async function showQuest(url, firstLoad = false) {
-      if (switching) return;
-      switching = true;
-      standbyWarmed = false;
-      visualSwapDone = false;
-      lastAudioTime = 0;
-
-      const nextIndex = firstLoad ? activeLayer : 1 - activeLayer;
-      const next = layers[nextIndex];
-      const current = layers[activeLayer];
-
-      try {
-        await prepareVideo(next, url);
-        next.currentTime = 0;
-        await next.play();
-        next.classList.add("visible");
-
-        if (!firstLoad && current !== next) {
-          current.classList.remove("visible");
-          current.pause();
-          current.currentTime = 0;
-        }
-
-        activeLayer = nextIndex;
-        currentUrl = url;
-
-        await playAudio(url, true);
-      } catch (error) {
-        console.error(error);
-      } finally {
-        switching = false;
+      if (!started) {
+        started = true;
+        const quest = quests[currentIndex];
+        renderOverlay(quest);
+        loadQuestVideo(quest);
+      } else {
+        renderOverlay(quests[currentIndex]);
       }
-
-      await primeStandbyLayer(url);
     }
 
     function nextQuest() {
-      if (!quests.length || switching) return;
+      if (!quests.length) return;
 
       currentIndex = (currentIndex + 1) % quests.length;
       const quest = quests[currentIndex];
+
       renderOverlay(quest);
-      showQuest(quest.url);
+      loadQuestVideo(quest);
     }
 
     refreshQuestList();
-    requestAnimationFrame(monitorSync);
-
     setInterval(nextQuest, DISPLAY_TIME);
     setInterval(refreshQuestList, LIST_REFRESH_TIME);
   </script>
