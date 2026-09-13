@@ -201,7 +201,6 @@
 
   <script>
     const CLOUD_NAME = "a3xk0plk";
-    const VIDEO_TAG = "quest-board-animated";
     const VIDEO_PREFIX = "Quest-Board-Animated/";
     const LIVE_OVERLAY_URL = "./data.json";
     const FALLBACK_OVERLAY_URL =
@@ -213,9 +212,6 @@
     const WARM_STANDBY_REMAINING = 0.50;
     const VISUAL_SWAP_REMAINING = 0.06;
     const MAX_SYNC_DRIFT = 0.12;
-
-    const VIDEO_LIST_URL =
-      `https://res.cloudinary.com/${CLOUD_NAME}/video/list/${VIDEO_TAG}.json`;
 
     let overlayData = [];
     let quests = [];
@@ -257,8 +253,8 @@
       return publicId.split("/").pop() || "";
     }
 
-    function buildVideoUrl(resource) {
-      return `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/v${resource.version}/${resource.public_id}.${resource.format}`;
+    function buildVideoUrl(id) {
+      return `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/f_mp4,vc_h264,ac_none,q_auto/${VIDEO_PREFIX}${id}.mp4`;
     }
 
     function formatUpdated(value) {
@@ -319,40 +315,17 @@
       try {
         await refreshOverlayData();
 
-        const response = await fetch(
-          `${VIDEO_LIST_URL}?refresh=${Date.now()}`,
-          { cache: "no-store" }
-        );
-
-        if (!response.ok) {
-          throw new Error(`Cloudinary list error: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        const overlaysById = new Map(
-          overlayData.map(item => [normalizeId(item.id), item])
-        );
-
-        const newQuests = (data.resources || [])
-          .filter(resource =>
-            resource.public_id &&
-            resource.public_id.startsWith(VIDEO_PREFIX)
-          )
-          .map(resource => {
-            const id = getResourceId(resource.public_id);
-            return {
-              id,
-              publicId: resource.public_id,
-              version: resource.version,
-              url: buildVideoUrl(resource),
-              overlay: overlaysById.get(normalizeId(id))
-            };
-          })
-          ;
+        const newQuests = overlayData
+          .filter(item => item && item.id)
+          .map(item => ({
+            id: item.id,
+            publicId: `${VIDEO_PREFIX}${item.id}`,
+            url: buildVideoUrl(item.id),
+            overlay: item
+          }));
 
         if (!newQuests.length) {
-          console.warn("No active quest videos with matching overlay data found.");
+          console.warn("No active quests found in live data.");
           return;
         }
 
