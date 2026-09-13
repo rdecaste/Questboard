@@ -167,7 +167,7 @@
 </head>
 
 <body>
-  <video id="questVideo" class="quest-video" autoplay muted loop playsinline preload="auto"></video>
+  <video id="questVideo" class="quest-video" autoplay muted loop playsinline webkit-playsinline preload="auto"></video>
 
   <div class="shade"></div>
 
@@ -206,6 +206,11 @@
     const LIST_REFRESH_TIME = 60000;
 
     const video = document.getElementById("questVideo");
+    video.autoplay = true;
+    video.muted = true;
+    video.defaultMuted = true;
+    video.loop = true;
+    video.playsInline = true;
 
     let overlayData = [];
     let quests = [];
@@ -282,9 +287,20 @@
 
       video.src = videoUrl;
       video.load();
-      video.play().catch(error => {
-        console.warn("Video autoplay failed", error);
-      });
+
+      const tryPlay = () => {
+        video.muted = true;
+        video.defaultMuted = true;
+        video.play().catch(error => {
+          console.warn("Video autoplay failed", error);
+        });
+      };
+
+      if (video.readyState >= 2) {
+        tryPlay();
+      } else {
+        video.addEventListener("loadeddata", tryPlay, { once: true });
+      }
     }
 
     async function refreshOverlayData() {
