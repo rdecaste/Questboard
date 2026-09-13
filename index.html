@@ -202,9 +202,14 @@
       <div id="questStatus" class="status unknown"></div>
       <div id="statusStatement" class="statement"></div>
 
-      <div id="focusBlock">
-        <div class="section-label">What matters now</div>
-        <div id="whatMattersNow" class="focus"></div>
+      <div id="evidenceBlock">
+        <div class="section-label">Latest evidence</div>
+        <div id="latestEvidence" class="focus"></div>
+      </div>
+
+      <div id="outcomeBlock">
+        <div class="section-label">Desired outcome</div>
+        <div id="desiredOutcome" class="focus"></div>
       </div>
 
       <div class="meta">
@@ -213,10 +218,6 @@
       </div>
     </section>
 
-    <aside id="quoteBlock" class="quote">
-      <div id="quoteText" class="quote-text"></div>
-      <div id="quoteAuthor" class="quote-author"></div>
-    </aside>
   </main>
 
   <script>
@@ -236,13 +237,12 @@
       title: document.getElementById("questTitle"),
       status: document.getElementById("questStatus"),
       statement: document.getElementById("statusStatement"),
-      focus: document.getElementById("whatMattersNow"),
-      focusBlock: document.getElementById("focusBlock"),
+      latestEvidence: document.getElementById("latestEvidence"),
+      evidenceBlock: document.getElementById("evidenceBlock"),
+      desiredOutcome: document.getElementById("desiredOutcome"),
+      outcomeBlock: document.getElementById("outcomeBlock"),
       target: document.getElementById("targetDate"),
-      updated: document.getElementById("lastUpdated"),
-      quoteBlock: document.getElementById("quoteBlock"),
-      quote: document.getElementById("quoteText"),
-      author: document.getElementById("quoteAuthor")
+      updated: document.getElementById("lastUpdated")
     };
 
     let quests = [];
@@ -283,15 +283,14 @@
       el.status.className = "status " + statusClass(quest.status);
       el.statement.textContent = quest.statusStatement || "";
 
-      el.focus.textContent = quest.whatMattersNow || "";
-      el.focusBlock.classList.toggle("hidden", !quest.whatMattersNow);
+      el.latestEvidence.textContent = quest.latestEvidence || "";
+      el.evidenceBlock.classList.toggle("hidden", !quest.latestEvidence);
+
+      el.desiredOutcome.textContent = quest.desiredOutcome || "";
+      el.outcomeBlock.classList.toggle("hidden", !quest.desiredOutcome);
 
       el.target.textContent = quest.targetDate ? "Target · " + quest.targetDate : "";
       el.updated.textContent = formatUpdated(quest.updatedAt);
-
-      el.quote.textContent = quest.quote ? "“" + quest.quote + "”" : "";
-      el.author.textContent = quest.quoteAuthor || "";
-      el.quoteBlock.classList.toggle("hidden", !quest.quote);
 
       loadVideo(quest);
     }
