@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Active Quest Board</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      color: #fff;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      cursor: none;
+    }
+
+    .quest-video {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      opacity: 0;
+      background: #000;
+      pointer-events: none;
+      transition: opacity 320ms ease;
+    }
+
+    .quest-video.visible { opacity: 1; }
+
+    .shade {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(4, 7, 12, .78) 0%, rgba(4, 7, 12, .64) 31%, rgba(4, 7, 12, .18) 52%, rgba(4, 7, 12, .04) 70%),
+        linear-gradient(0deg, rgba(0,0,0,.32) 0%, transparent 34%);
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      grid-template-columns: minmax(420px, 42vw) 1fr;
+      pointer-events: none;
+    }
+
+    .panel {
+      align-self: center;
+      margin-left: clamp(34px, 4.5vw, 88px);
+      width: min(38vw, 720px);
+      padding: clamp(28px, 3vw, 52px);
+      border: 1px solid rgba(255,255,255,.13);
+      border-radius: 28px;
+      background: rgba(8, 12, 19, .42);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 20px 70px rgba(0,0,0,.28);
+    }
+
+    .eyebrow {
+      font-size: clamp(12px, .8vw, 16px);
+      text-transform: uppercase;
+      letter-spacing: .19em;
+      opacity: .64;
+      margin-bottom: 12px;
+    }
+
+    .title {
+      font-size: clamp(34px, 3.1vw, 64px);
+      line-height: 1.02;
+      font-weight: 750;
+      letter-spacing: -.035em;
+      margin: 0 0 24px;
+      text-wrap: balance;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: clamp(13px, 1vw, 19px);
+      font-weight: 750;
+      letter-spacing: .04em;
+      padding: 8px 12px;
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      margin-bottom: 18px;
+    }
+
+    .status::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 16px currentColor;
+    }
+
+    .status.strong { color: #8ef5b2; }
+    .status.forward { color: #b6e5ff; }
+    .status.slow { color: #ffe59a; }
+    .status.stalled { color: #ff9c9c; }
+    .status.unknown { color: #d4d8df; }
+
+    .statement {
+      font-size: clamp(18px, 1.45vw, 28px);
+      line-height: 1.38;
+      font-weight: 520;
+      color: rgba(255,255,255,.92);
+      margin-bottom: 28px;
+    }
+
+    .section-label {
+      margin-bottom: 7px;
+      font-size: clamp(11px, .72vw, 14px);
+      letter-spacing: .17em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,.5);
+    }
+
+    .focus {
+      font-size: clamp(17px, 1.25vw, 24px);
+      line-height: 1.34;
+      font-weight: 650;
+      margin-bottom: 26px;
+    }
+
+    .meta {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      font-size: clamp(12px, .83vw, 16px);
+      color: rgba(255,255,255,.58);
+    }
+
+    .quote {
+      position: fixed;
+      right: clamp(38px, 5vw, 92px);
+      bottom: clamp(38px, 5vw, 84px);
+      width: min(42vw, 760px);
+      text-align: right;
+      text-shadow: 0 2px 18px rgba(0,0,0,.8);
+    }
+
+    .quote-text {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: clamp(23px, 2vw, 40px);
+      line-height: 1.22;
+      font-style: italic;
+      text-wrap: balance;
+    }
+
+    .quote-author {
+      margin-top: 12px;
+      font-size: clamp(12px, .9vw, 17px);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,.7);
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+
+<body>
+  <video id="questA" class="quest-video" muted playsinline preload="auto"></video>
+  <video id="questB" class="quest-video" muted playsinline preload="auto"></video>
+  <audio id="questAudio" preload="auto" autoplay loop></audio>
+
+  <div class="shade"></div>
+
+  <div class="overlay">
+    <section class="panel">
+      <div class="eyebrow">Active Quest</div>
+      <h1 id="questTitle" class="title"></h1>
+      <div id="questStatus" class="status unknown"></div>
+      <div id="statusStatement" class="statement"></div>
+
+      <div id="focusBlock">
+        <div class="section-label">What matters now</div>
+        <div id="whatMattersNow" class="focus"></div>
+      </div>
+
+      <div class="meta">
+        <span id="targetDate"></span>
+        <span id="lastUpdated"></span>
+      </div>
+    </section>
+  </div>
+
+  <aside id="quoteBlock" class="quote">
+    <div id="quoteText" class="quote-text"></div>
+    <div id="quoteAuthor" class="quote-author"></div>
+  </aside>
+
+  <script>
+    const CLOUD_NAME = "a3xk0plk";
+    const VIDEO_TAG = "quest-board-animated";
+    const VIDEO_PREFIX = "Quest-Board-Animated/";
+    const OVERLAY_URL =
+      `https://res.cloudinary.com/${CLOUD_NAME}/raw/upload/Quest-Board-Live/active-quests.json`;
+
+    const DISPLAY_TIME = 30000;
+    const LIST_REFRESH_TIME = 60000;
+
+    const WARM_STANDBY_REMAINING = 0.50;
+    const VISUAL_SWAP_REMAINING = 0.06;
+    const MAX_SYNC_DRIFT = 0.12;
+
+    const VIDEO_LIST_URL =
+      `https://res.cloudinary.com/${CLOUD_NAME}/video/list/${VIDEO_TAG}.json`;
+
+    let overlayData = [];
+    let quests = [];
+    let currentIndex = 0;
+    let activeLayer = 0;
+    let started = false;
+    let currentUrl = "";
+    let switching = false;
+    let standbyWarmed = false;
+    let visualSwapDone = false;
+    let lastAudioTime = 0;
+
+    const layers = [
+      document.getElementById("questA"),
+      document.getElementById("questB")
+    ];
+
+    const audio = document.getElementById("questAudio");
+    audio.volume = 1;
+
+    const el = {
+      title: document.getElementById("questTitle"),
+      status: document.getElementById("questStatus"),
+      statement: document.getElementById("statusStatement"),
+      focus: document.getElementById("whatMattersNow"),
+      focusBlock: document.getElementById("focusBlock"),
+      target: document.getElementById("targetDate"),
+      updated: document.getElementById("lastUpdated"),
+      quoteBlock: document.getElementById("quoteBlock"),
+      quote: document.getElementById("quoteText"),
+      author: document.getElementById("quoteAuthor")
+    };
+
+    function normalizeId(value = "") {
+      return String(value).replace(/-/g, "").toLowerCase();
+    }
+
+    function getResourceId(publicId = "") {
+      return publicId.split("/").pop() || "";
+    }
+
+    function buildVideoUrl(resource) {
+      return `https://res.cloudinary.com/${CLOUD_NAME}/video/upload/v${resource.version}/${resource.public_id}.${resource.format}`;
+    }
+
+    function formatUpdated(value) {
+      if (!value) return "";
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return value;
+      return `Updated ${d.toLocaleDateString(undefined, { day: "numeric", month: "short" })}`;
+    }
+
+    function statusClass(status = "") {
+      if (status === "STRONG PROGRESS") return "strong";
+      if (status === "MOVING FORWARD") return "forward";
+      if (status === "SLOW PROGRESS") return "slow";
+      if (status === "STALLED") return "stalled";
+      return "unknown";
+    }
+
+    function renderOverlay(quest) {
+      const d = quest?.overlay || {};
+      const hasOverlay = Boolean(quest?.overlay);
+      document.querySelector(".panel").classList.toggle("hidden", !hasOverlay);
+      el.quoteBlock.classList.toggle("hidden", !hasOverlay || !d.quote);
+
+      el.title.textContent = d.questTitle || "";
+      el.status.textContent = d.status || "NOT ENOUGH INFORMATION";
+      el.status.className = `status ${statusClass(d.status)}`;
+      el.statement.textContent = d.statusStatement || "";
+
+      el.focus.textContent = d.whatMattersNow || "";
+      el.focusBlock.classList.toggle("hidden", !d.whatMattersNow);
+
+      el.target.textContent = d.targetDate ? `Target · ${d.targetDate}` : "";
+      el.updated.textContent = formatUpdated(d.updatedAt);
+
+      el.quote.textContent = d.quote ? `“${d.quote}”` : "";
+      el.author.textContent = d.quoteAuthor || "";
+      el.quoteBlock.classList.toggle("hidden", !hasOverlay || !d.quote);
+    }
+
+    async function refreshOverlayData() {
+      try {
+        const response = await fetch(`${OVERLAY_URL}?refresh=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`Overlay data error: ${response.status}`);
+        const data = await response.json();
+        overlayData = Array.isArray(data) ? data : [];
+      } catch (error) {
+        console.warn("Could not refresh overlay data:", error);
+      }
+    }
+
+    async function refreshQuestList() {
+      try {
+        await refreshOverlayData();
+
+        const response = await fetch(
+          `${VIDEO_LIST_URL}?refresh=${Date.now()}`,
+          { cache: "no-store" }
+        );
+
+        if (!response.ok) {
+          throw new Error(`Cloudinary list error: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        const overlaysById = new Map(
+          overlayData.map(item => [normalizeId(item.id), item])
+        );
+
+        const newQuests = (data.resources || [])
+          .filter(resource =>
+            resource.public_id &&
+            resource.public_id.startsWith(VIDEO_PREFIX)
+          )
+          .map(resource => {
+            const id = getResourceId(resource.public_id);
+            return {
+              id,
+              publicId: resource.public_id,
+              version: resource.version,
+              url: buildVideoUrl(resource),
+              overlay: overlaysById.get(normalizeId(id))
+            };
+          })
+          ;
+
+        if (!newQuests.length) {
+          console.warn("No active quest videos with matching overlay data found.");
+          return;
+        }
+
+        quests = newQuests;
+
+        if (currentIndex >= quests.length) currentIndex = 0;
+
+        if (!started) {
+          started = true;
+          renderOverlay(quests[currentIndex]);
+          await showQuest(quests[currentIndex].url, true);
+        } else {
+          const currentId = normalizeId(quests[currentIndex]?.id);
+          const refreshed = quests.find(q => normalizeId(q.id) === currentId);
+          if (refreshed) renderOverlay(refreshed);
+        }
+      } catch (error) {
+        console.error("Could not refresh active quest list:", error);
+      }
+    }
+
+    async function playAudio(url, restart = true) {
+      try {
+        const absoluteUrl = new URL(url, window.location.href).href;
+
+        if (audio.src !== absoluteUrl) {
+          audio.src = url;
+          audio.load();
+        }
+
+        if (restart) {
+          try { audio.currentTime = 0; } catch (_) {}
+        }
+
+        await audio.play();
+      } catch (error) {
+        console.warn("Audio autoplay blocked.", error);
+      }
+    }
+
+    function unlockAudio() {
+      if (currentUrl) playAudio(currentUrl, false);
+      document.removeEventListener("pointerdown", unlockAudio);
+      document.removeEventListener("touchstart", unlockAudio);
+    }
+
+    document.addEventListener("pointerdown", unlockAudio, { passive: true });
+    document.addEventListener("touchstart", unlockAudio, { passive: true });
+
+    function prepareVideo(video, url) {
+      return new Promise((resolve, reject) => {
+        video.pause();
+        video.classList.remove("visible");
+
+        const absoluteUrl = new URL(url, window.location.href).href;
+        if (video.src !== absoluteUrl) {
+          video.src = url;
+          video.load();
+        }
+
+        if (video.readyState >= 3) {
+          try { video.currentTime = 0; } catch (_) {}
+          resolve();
+          return;
+        }
+
+        const onReady = () => {
+          cleanup();
+          try { video.currentTime = 0; } catch (_) {}
+          resolve();
+        };
+
+        const onError = () => {
+          cleanup();
+          reject(new Error(`Could not load video: ${url}`));
+        };
+
+        const cleanup = () => {
+          video.removeEventListener("canplay", onReady);
+          video.removeEventListener("error", onError);
+        };
+
+        video.addEventListener("canplay", onReady, { once: true });
+        video.addEventListener("error", onError, { once: true });
+      });
+    }
+
+    async function primeStandbyLayer(url) {
+      const standby = layers[1 - activeLayer];
+      try {
+        await prepareVideo(standby, url);
+        standby.pause();
+        standby.currentTime = 0;
+        standbyWarmed = false;
+      } catch (error) {
+        console.error("Could not prime standby layer:", error);
+      }
+    }
+
+    async function warmStandby() {
+      if (standbyWarmed || switching || !currentUrl) return;
+
+      standbyWarmed = true;
+      const standby = layers[1 - activeLayer];
+
+      try {
+        if (standby.readyState < 3) await prepareVideo(standby, currentUrl);
+        standby.currentTime = 0;
+        await standby.play();
+
+        setTimeout(() => {
+          if (standby !== layers[activeLayer]) {
+            standby.pause();
+            standby.currentTime = 0;
+          }
+        }, 120);
+      } catch (error) {
+        console.error("Could not warm standby layer:", error);
+      }
+    }
+
+    async function swapVisualAtAudioBoundary() {
+      if (switching || visualSwapDone || !currentUrl) return;
+
+      switching = true;
+      visualSwapDone = true;
+
+      const current = layers[activeLayer];
+      const nextIndex = 1 - activeLayer;
+      const next = layers[nextIndex];
+
+      try {
+        if (next.readyState < 3) await prepareVideo(next, currentUrl);
+
+        next.currentTime = 0;
+        await next.play();
+
+        next.classList.add("visible");
+        current.classList.remove("visible");
+        current.pause();
+        current.currentTime = 0;
+
+        activeLayer = nextIndex;
+      } catch (error) {
+        console.error("Could not swap visual layer:", error);
+      } finally {
+        switching = false;
+      }
+    }
+
+    function monitorSync() {
+      if (
+        currentUrl &&
+        !audio.paused &&
+        Number.isFinite(audio.duration) &&
+        audio.duration > 0
+      ) {
+        const audioTime = audio.currentTime;
+        const remaining = audio.duration - audioTime;
+        const active = layers[activeLayer];
+
+        if (audioTime + 0.25 < lastAudioTime) {
+          visualSwapDone = false;
+          standbyWarmed = false;
+          primeStandbyLayer(currentUrl);
+        }
+
+        if (!standbyWarmed && remaining <= WARM_STANDBY_REMAINING) warmStandby();
+        if (!visualSwapDone && remaining <= VISUAL_SWAP_REMAINING) swapVisualAtAudioBoundary();
+
+        if (
+          !switching &&
+          !active.paused &&
+          remaining > 0.5 &&
+          Math.abs(active.currentTime - audioTime) > MAX_SYNC_DRIFT
+        ) {
+          try { active.currentTime = audioTime; } catch (_) {}
+        }
+
+        lastAudioTime = audioTime;
+      }
+
+      requestAnimationFrame(monitorSync);
+    }
+
+    async function showQuest(url, firstLoad = false) {
+      if (switching) return;
+      switching = true;
+      standbyWarmed = false;
+      visualSwapDone = false;
+      lastAudioTime = 0;
+
+      const nextIndex = firstLoad ? activeLayer : 1 - activeLayer;
+      const next = layers[nextIndex];
+      const current = layers[activeLayer];
+
+      try {
+        await prepareVideo(next, url);
+        next.currentTime = 0;
+        await next.play();
+        next.classList.add("visible");
+
+        if (!firstLoad && current !== next) {
+          current.classList.remove("visible");
+          current.pause();
+          current.currentTime = 0;
+        }
+
+        activeLayer = nextIndex;
+        currentUrl = url;
+
+        await playAudio(url, true);
+      } catch (error) {
+        console.error(error);
+      } finally {
+        switching = false;
+      }
+
+      await primeStandbyLayer(url);
+    }
+
+    function nextQuest() {
+      if (!quests.length || switching) return;
+
+      currentIndex = (currentIndex + 1) % quests.length;
+      const quest = quests[currentIndex];
+      renderOverlay(quest);
+      showQuest(quest.url);
+    }
+
+    refreshQuestList();
+    requestAnimationFrame(monitorSync);
+
+    setInterval(nextQuest, DISPLAY_TIME);
+    setInterval(refreshQuestList, LIST_REFRESH_TIME);
+  </script>
+</body>
+</html>
