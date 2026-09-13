@@ -276,9 +276,9 @@
     function loadQuestVideo(quest) {
       const videoUrl = quest?.url || "";
       const videoKey = String(
-        quest?.videoPublicId ||
         quest?.videoVersion ||
-        videoUrl
+        videoUrl ||
+        quest?.videoPublicId
       );
 
       if (!videoUrl || videoKey === loadedVideoKey) return;
