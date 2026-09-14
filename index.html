@@ -218,6 +218,11 @@
       </div>
     </section>
 
+    <aside id="quoteBlock" class="quote hidden">
+      <div id="quoteText" class="quote-text"></div>
+      <div id="quoteAuthor" class="quote-author"></div>
+    </aside>
+
   </main>
 
   <script>
@@ -242,7 +247,10 @@
       desiredOutcome: document.getElementById("desiredOutcome"),
       outcomeBlock: document.getElementById("outcomeBlock"),
       target: document.getElementById("targetDate"),
-      updated: document.getElementById("lastUpdated")
+      updated: document.getElementById("lastUpdated"),
+      quoteBlock: document.getElementById("quoteBlock"),
+      quote: document.getElementById("quoteText"),
+      author: document.getElementById("quoteAuthor")
     };
 
     let quests = [];
@@ -291,6 +299,10 @@
 
       el.target.textContent = quest.targetDate ? "Target · " + quest.targetDate : "";
       el.updated.textContent = formatUpdated(quest.updatedAt);
+
+      el.quote.textContent = quest.quote ? `“${quest.quote}”` : "";
+      el.author.textContent = quest.quoteAuthor || "";
+      el.quoteBlock.classList.toggle("hidden", !quest.quote);
 
       loadVideo(quest);
     }
