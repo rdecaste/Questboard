@@ -16,6 +16,7 @@
       --safe-bottom: env(safe-area-inset-bottom, 0px);
       --safe-left: env(safe-area-inset-left, 0px);
       --safe-right: env(safe-area-inset-right, 0px);
+      --video-crossfade-ms: 800ms;
     }
 
     * { box-sizing: border-box; }
@@ -43,7 +44,7 @@
       background: #000;
     }
 
-    #questVideo {
+    .quest-video {
       position: absolute;
       inset: 0;
       width: 100%;
@@ -52,6 +53,13 @@
       object-position: center;
       display: block;
       background: #000;
+      opacity: 0;
+      transition: opacity var(--video-crossfade-ms) ease-in-out;
+      will-change: opacity;
+    }
+
+    .quest-video.active {
+      opacity: 1;
     }
 
     .shade {
@@ -193,7 +201,8 @@
 
 <body>
   <main class="app">
-    <video id="questVideo" autoplay muted loop playsinline webkit-playsinline preload="auto"></video>
+    <video id="questVideoA" class="quest-video active" autoplay muted loop playsinline webkit-playsinline preload="auto"></video>
+    <video id="questVideoB" class="quest-video" autoplay muted loop playsinline webkit-playsinline preload="auto"></video>
     <div class="shade"></div>
 
     <section class="panel">
@@ -230,13 +239,20 @@
     const VIDEO_LIST_URL = "https://res.cloudinary.com/a3xk0plk/video/list/quest-board-animated.json";
     const REFRESH_MS = 15000;
     const ROTATE_MS = 30000;
+    const CROSSFADE_MS = 800;
 
-    const video = document.getElementById("questVideo");
-    video.autoplay = true;
-    video.muted = true;
-    video.defaultMuted = true;
-    video.loop = true;
-    video.playsInline = true;
+    const videos = [
+      document.getElementById("questVideoA"),
+      document.getElementById("questVideoB")
+    ];
+
+    for (const video of videos) {
+      video.autoplay = true;
+      video.muted = true;
+      video.defaultMuted = true;
+      video.loop = true;
+      video.playsInline = true;
+    }
 
     const el = {
       title: document.getElementById("questTitle"),
@@ -255,7 +271,9 @@
 
     let quests = [];
     let currentIndex = 0;
+    let activeVideoIndex = 0;
     let loadedVideoKey = "";
+    let transitionToken = 0;
 
     function normalizeId(value = "") {
       return String(value).replace(/-/g, "").toLowerCase();
@@ -307,35 +325,78 @@
       loadVideo(quest);
     }
 
-    function loadVideo(quest) {
-      const url = quest.resolvedVideoUrl || quest.video_url || "";
-      const key = String(
-        quest.resolvedVideoVersion ||
-        quest.video_version ||
+    function videoKeyForQuest(quest, url) {
+      return [
+        quest.id || "",
+        quest.resolvedVideoVersion || quest.video_version || "",
         url
-      );
+      ].join("|");
+    }
 
-      if (!url || key === loadedVideoKey) return;
-
-      loadedVideoKey = key;
-
+    function clearVideo(video) {
       video.pause();
+      video.classList.remove("active");
       video.removeAttribute("src");
       video.load();
+    }
 
-      video.src = url;
-      video.load();
+    function loadVideo(quest) {
+      const url = quest.resolvedVideoUrl || quest.video_url || "";
+      if (!url) return;
 
-      const tryPlay = () => {
-        video.muted = true;
-        video.defaultMuted = true;
-        video.play().catch(err => console.warn("Autoplay failed:", err));
+      const key = videoKeyForQuest(quest, url);
+      if (key === loadedVideoKey) return;
+
+      const token = ++transitionToken;
+      const outgoingIndex = activeVideoIndex;
+      const incomingIndex = outgoingIndex === 0 ? 1 : 0;
+      const outgoing = videos[outgoingIndex];
+      const incoming = videos[incomingIndex];
+
+      incoming.pause();
+      incoming.classList.remove("active");
+      incoming.removeAttribute("src");
+      incoming.load();
+      incoming.src = url;
+      incoming.currentTime = 0;
+      incoming.load();
+
+      const startCrossfade = async () => {
+        if (token !== transitionToken) return;
+
+        incoming.muted = true;
+        incoming.defaultMuted = true;
+
+        try {
+          await incoming.play();
+        } catch (err) {
+          console.warn("Autoplay failed:", err);
+          return;
+        }
+
+        if (token !== transitionToken) return;
+
+        requestAnimationFrame(() => {
+          if (token !== transitionToken) return;
+
+          incoming.classList.add("active");
+          outgoing.classList.remove("active");
+          activeVideoIndex = incomingIndex;
+          loadedVideoKey = key;
+
+          setTimeout(() => {
+            if (token !== transitionToken) return;
+            outgoing.pause();
+            outgoing.removeAttribute("src");
+            outgoing.load();
+          }, CROSSFADE_MS + 100);
+        });
       };
 
-      if (video.readyState >= 2) {
-        tryPlay();
+      if (incoming.readyState >= 3) {
+        startCrossfade();
       } else {
-        video.addEventListener("loadeddata", tryPlay, { once: true });
+        incoming.addEventListener("canplay", startCrossfade, { once: true });
       }
     }
 
