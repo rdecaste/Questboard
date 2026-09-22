@@ -91,15 +91,6 @@
       text-shadow: 0 2px 14px rgba(0,0,0,.72);
     }
 
-    .eyebrow {
-      margin-bottom: 12px;
-      font-size: clamp(11px, .8vw, 16px);
-      font-weight: 750;
-      letter-spacing: .19em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-
     .title {
       margin: 0 0 22px;
       font-size: clamp(34px, 3.1vw, 64px);
@@ -112,22 +103,25 @@
     .status {
       display: inline-flex;
       align-items: center;
-      gap: 9px;
-      margin-bottom: 18px;
-      font-size: clamp(12px, .95vw, 18px);
+      gap: 7px;
+      margin-bottom: 16px;
+      padding: 5px 11px;
+      border-radius: 999px;
+      font-size: clamp(10px, .74vw, 14px);
       font-weight: 800;
-      letter-spacing: .045em;
-      background: transparent;
-      border: 0;
+      letter-spacing: .11em;
+      text-transform: uppercase;
+      background: rgba(255,255,255,.10);
+      border: 1px solid currentColor;
     }
 
     .status::before {
       content: "";
-      width: 9px;
-      height: 9px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
       background: currentColor;
-      box-shadow: 0 0 14px currentColor;
+      box-shadow: 0 0 12px currentColor;
       flex: 0 0 auto;
     }
 
@@ -138,33 +132,23 @@
     .status.unknown { color: #d4d8df; }
 
     .statement {
-      margin-bottom: 27px;
+      margin-bottom: 0;
       font-size: clamp(17px, 1.4vw, 27px);
       line-height: 1.38;
       font-weight: 520;
       color: rgba(255,255,255,.93);
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      overflow: hidden;
+      /* .panel is pointer-events:none, so re-enable here or the
+         title="" tooltip with the full text can never be shown. */
+      pointer-events: auto;
     }
 
-    .section-label {
-      margin-bottom: 7px;
-      font-size: clamp(10px, .72vw, 14px);
-      font-weight: 750;
-      letter-spacing: .17em;
-      text-transform: uppercase;
-      color: rgba(255,255,255,.55);
-    }
-
-    .focus {
-      margin-bottom: 24px;
-      font-size: clamp(16px, 1.22vw, 23px);
-      line-height: 1.35;
-      font-weight: 680;
-    }
-
-    .meta {
-      display: flex;
-      gap: 22px;
-      flex-wrap: wrap;
+    .updated {
+      margin-top: 18px;
       font-size: clamp(11px, .8vw, 15px);
       color: rgba(255,255,255,.62);
     }
@@ -206,25 +190,10 @@
     <div class="shade"></div>
 
     <section class="panel">
-      <div class="eyebrow">Active Quest</div>
       <h1 id="questTitle" class="title"></h1>
       <div id="questStatus" class="status unknown"></div>
-      <div id="statusStatement" class="statement"></div>
-
-      <div id="evidenceBlock">
-        <div class="section-label">Latest evidence</div>
-        <div id="latestEvidence" class="focus"></div>
-      </div>
-
-      <div id="outcomeBlock">
-        <div class="section-label">Desired outcome</div>
-        <div id="desiredOutcome" class="focus"></div>
-      </div>
-
-      <div class="meta">
-        <span id="targetDate"></span>
-        <span id="lastUpdated"></span>
-      </div>
+      <div id="questLine" class="statement"></div>
+      <div id="lastUpdated" class="updated"></div>
     </section>
 
     <aside id="quoteBlock" class="quote hidden">
@@ -240,6 +209,7 @@
     const REFRESH_MS = 15000;
     const ROTATE_MS = 30000;
     const CROSSFADE_MS = 800;
+    const LINE_MAX_CHARS = 100;
 
     const videos = [
       document.getElementById("questVideoA"),
@@ -257,12 +227,7 @@
     const el = {
       title: document.getElementById("questTitle"),
       status: document.getElementById("questStatus"),
-      statement: document.getElementById("statusStatement"),
-      latestEvidence: document.getElementById("latestEvidence"),
-      evidenceBlock: document.getElementById("evidenceBlock"),
-      desiredOutcome: document.getElementById("desiredOutcome"),
-      outcomeBlock: document.getElementById("outcomeBlock"),
-      target: document.getElementById("targetDate"),
+      line: document.getElementById("questLine"),
       updated: document.getElementById("lastUpdated"),
       quoteBlock: document.getElementById("quoteBlock"),
       quote: document.getElementById("quoteText"),
@@ -301,22 +266,42 @@
       });
     }
 
+    // The card shows exactly ONE body line. latestEvidence is the display
+    // field; statusStatement is a copy of the agent's internal progress
+    // assessment and is only used when evidence is empty. Because only one of
+    // the two is ever rendered, the card can never repeat the same numbers in
+    // a statement and an evidence line at the same time.
+    function cardLine(quest) {
+      const evidence = String(quest.latestEvidence || "").trim();
+      if (evidence) return evidence;
+      return String(quest.statusStatement || "").trim();
+    }
+
+    function clipLine(text, max = LINE_MAX_CHARS) {
+      const clean = String(text || "").replace(/\s+/g, " ").trim();
+      if (clean.length <= max) return clean;
+
+      const head = clean.slice(0, max + 1);
+      const lastSpace = head.lastIndexOf(" ");
+      const cut = lastSpace > max * 0.6 ? head.slice(0, lastSpace) : clean.slice(0, max);
+      return cut.replace(/[\s.,;:!?\u2013\u2014-]+$/, "") + "\u2026";
+    }
+
     function renderQuest(quest) {
       if (!quest) return;
 
       el.title.textContent = quest.questTitle || "";
       el.status.textContent = quest.status || "NOT ENOUGH INFORMATION";
       el.status.className = "status " + statusClass(quest.status);
-      el.statement.textContent = quest.statusStatement || "";
 
-      el.latestEvidence.textContent = quest.latestEvidence || "";
-      el.evidenceBlock.classList.toggle("hidden", !quest.latestEvidence);
+      const line = cardLine(quest);
+      el.line.textContent = clipLine(line);
+      el.line.title = line;
+      el.line.classList.toggle("hidden", !line);
 
-      el.desiredOutcome.textContent = quest.desiredOutcome || "";
-      el.outcomeBlock.classList.toggle("hidden", !quest.desiredOutcome);
-
-      el.target.textContent = quest.targetDate ? "Target · " + quest.targetDate : "";
-      el.updated.textContent = formatUpdated(quest.updatedAt);
+      const updated = formatUpdated(quest.updatedAt);
+      el.updated.textContent = updated;
+      el.updated.classList.toggle("hidden", !updated);
 
       el.quote.textContent = quest.quote ? `“${quest.quote}”` : "";
       el.author.textContent = quest.quoteAuthor || "";
