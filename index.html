@@ -7,6 +7,9 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Active Quest Board</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap" />
 
   <style>
     :root {
@@ -80,7 +83,7 @@
     .panel {
       position: absolute;
       left: calc(clamp(26px, 4.5vw, 88px) + var(--safe-left));
-      top: 50%;
+      top: 45%;
       transform: translateY(-50%);
       width: min(39vw, 720px);
       padding: 0;
@@ -93,18 +96,31 @@
 
     .clock {
       margin-bottom: clamp(22px, 2.6vw, 48px);
+      text-align: center;
     }
 
+    /* fitClock() overrides font-size so the digits span the panel width;
+       the clamp is only the size shown before the font has loaded. */
     .clock-time {
+      display: inline-block;
+      font-family: "Orbitron", Inter, -apple-system, BlinkMacSystemFont, sans-serif;
       font-size: clamp(72px, 8.4vw, 168px);
-      line-height: .9;
-      font-weight: 250;
-      letter-spacing: -.045em;
-      font-variant-numeric: tabular-nums;
+      line-height: .82;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    /* Orbitron has no tabular figures ("1" is half the width of "0"), so each
+       digit sits in a fixed cell as wide as the widest digit. The clock then
+       spans the same width at 11:11 as at 20:08. */
+    .clock-digit {
+      display: inline-block;
+      width: var(--digit-w, .8em);
+      text-align: center;
     }
 
     .clock-date {
-      margin-top: 10px;
+      margin-top: 14px;
       font-size: clamp(13px, 1vw, 20px);
       font-weight: 600;
       letter-spacing: .06em;
@@ -636,16 +652,46 @@
 
     function renderClock() {
       const now = new Date();
-      clockTime.textContent = now.toLocaleTimeString(undefined, {
+      const time = now.toLocaleTimeString(undefined, {
         hour: "2-digit",
         minute: "2-digit",
         hourCycle: "h23"
       });
+      if (clockTime.dataset.time !== time) {
+        clockTime.dataset.time = time;
+        clockTime.replaceChildren(...Array.from(time, ch => {
+          const cell = document.createElement("span");
+          if (/\d/.test(ch)) cell.className = "clock-digit";
+          cell.textContent = ch;
+          return cell;
+        }));
+      }
       clockDate.textContent = now.toLocaleDateString(undefined, {
         weekday: "long",
         day: "numeric",
         month: "long"
       });
+    }
+
+    // Size the clock so it spans the panel width exactly: measure the widest
+    // digit and the separator at 100px, set the digit cell width from that, and
+    // scale the font so four cells plus the separator fill the panel.
+    function fitClock() {
+      const target = clockTime.parentElement.clientWidth;
+      clockTime.style.fontSize = "100px";
+      const measure = text => {
+        clockTime.textContent = text;
+        return clockTime.getBoundingClientRect().width;
+      };
+      let digit = 0;
+      for (let d = 0; d <= 9; d++) digit = Math.max(digit, measure(String(d)));
+      const sep = measure(":");
+
+      delete clockTime.dataset.time;
+      renderClock();
+      if (!target || !digit) return;
+      clockTime.style.setProperty("--digit-w", (digit / 100) + "em");
+      clockTime.style.fontSize = (100 * target / (4 * digit + sep)) + "px";
     }
 
     function nextQuest() {
@@ -655,6 +701,11 @@
     }
 
     renderClock();
+    fitClock();
+    // Refit once Orbitron arrives (the first fit measures the fallback font)
+    // and whenever the panel width changes.
+    document.fonts?.ready.then(fitClock);
+    addEventListener("resize", fitClock);
     // Tick every second so the minute flips on time; the text only changes once a minute.
     setInterval(renderClock, 1000);
     refreshDashboard();
