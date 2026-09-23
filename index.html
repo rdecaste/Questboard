@@ -91,6 +91,31 @@
       text-shadow: 0 2px 14px rgba(0,0,0,.72);
     }
 
+    .phase-track {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      font-size: clamp(10px, .72vw, 14px);
+      font-weight: 750;
+      letter-spacing: .17em;
+      text-transform: uppercase;
+    }
+
+    .phase-step { color: rgba(255,255,255,.30); }
+    .phase-step.done { color: rgba(255,255,255,.58); }
+    .phase-step.current { color: #fff; }
+
+    .phase-step + .phase-step::before {
+      content: "";
+      display: inline-block;
+      width: 18px;
+      height: 1px;
+      margin-right: 10px;
+      vertical-align: middle;
+      background: rgba(255,255,255,.30);
+    }
+
     .title {
       margin: 0 0 22px;
       font-size: clamp(34px, 3.1vw, 64px);
@@ -100,11 +125,18 @@
       text-wrap: balance;
     }
 
+    .status-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin-bottom: 18px;
+    }
+
     .status {
       display: inline-flex;
       align-items: center;
       gap: 7px;
-      margin-bottom: 16px;
       padding: 5px 11px;
       border-radius: 999px;
       font-size: clamp(10px, .74vw, 14px);
@@ -131,9 +163,39 @@
     .status.stalled { color: #ff9c9c; }
     .status.unknown { color: #d4d8df; }
 
+    /* The matcher only writes Dashboard Status when it finds new evidence, so
+       the badge never decays on its own. Fade it once the quest has gone quiet
+       so an old "MOVING FORWARD" does not read as current. */
+    .status.stale { opacity: .5; }
+
+    .freshness {
+      font-size: clamp(11px, .8vw, 15px);
+      font-weight: 650;
+      color: rgba(255,255,255,.66);
+    }
+
+    .freshness.quiet { color: #ffc98a; }
+
+    .next-move {
+      margin-bottom: 14px;
+      font-size: clamp(17px, 1.4vw, 27px);
+      line-height: 1.3;
+      font-weight: 720;
+    }
+
+    .next-label {
+      margin-right: 10px;
+      font-size: .62em;
+      font-weight: 800;
+      letter-spacing: .17em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,.62);
+      vertical-align: .12em;
+    }
+
     .statement {
       margin-bottom: 0;
-      font-size: clamp(17px, 1.4vw, 27px);
+      font-size: clamp(15px, 1.15vw, 22px);
       line-height: 1.38;
       font-weight: 520;
       color: rgba(255,255,255,.93);
@@ -147,10 +209,22 @@
       pointer-events: auto;
     }
 
-    .updated {
-      margin-top: 18px;
-      font-size: clamp(11px, .8vw, 15px);
-      color: rgba(255,255,255,.62);
+    .countdown {
+      margin-top: 16px;
+      font-size: clamp(12px, .9vw, 17px);
+      font-weight: 700;
+      letter-spacing: .04em;
+      color: rgba(255,255,255,.82);
+    }
+
+    .pass-fail {
+      margin-top: 22px;
+      padding-left: 14px;
+      border-left: 2px solid rgba(255,255,255,.35);
+      font-size: clamp(13px, .95vw, 18px);
+      line-height: 1.35;
+      font-style: italic;
+      color: rgba(255,255,255,.72);
     }
 
     .quote {
@@ -190,10 +264,16 @@
     <div class="shade"></div>
 
     <section class="panel">
+      <div id="phaseTrack" class="phase-track"></div>
       <h1 id="questTitle" class="title"></h1>
-      <div id="questStatus" class="status unknown"></div>
+      <div class="status-row">
+        <div id="questStatus" class="status unknown"></div>
+        <div id="freshness" class="freshness"></div>
+      </div>
+      <div id="nextMove" class="next-move"></div>
       <div id="questLine" class="statement"></div>
-      <div id="lastUpdated" class="updated"></div>
+      <div id="countdown" class="countdown"></div>
+      <div id="passFail" class="pass-fail"></div>
     </section>
 
     <aside id="quoteBlock" class="quote hidden">
@@ -210,6 +290,11 @@
     const ROTATE_MS = 30000;
     const CROSSFADE_MS = 800;
     const LINE_MAX_CHARS = 100;
+    const NEXT_MAX_CHARS = 70;
+    const PASS_FAIL_MAX_CHARS = 90;
+    // After this many days without new evidence the quest counts as quiet.
+    const QUIET_AFTER_DAYS = 7;
+    const PHASES = ["Start", "Build", "Push", "Finish"];
 
     const videos = [
       document.getElementById("questVideoA"),
@@ -225,10 +310,14 @@
     }
 
     const el = {
+      phase: document.getElementById("phaseTrack"),
       title: document.getElementById("questTitle"),
       status: document.getElementById("questStatus"),
+      freshness: document.getElementById("freshness"),
+      next: document.getElementById("nextMove"),
       line: document.getElementById("questLine"),
-      updated: document.getElementById("lastUpdated"),
+      countdown: document.getElementById("countdown"),
+      passFail: document.getElementById("passFail"),
       quoteBlock: document.getElementById("quoteBlock"),
       quote: document.getElementById("quoteText"),
       author: document.getElementById("quoteAuthor")
@@ -256,14 +345,65 @@
       return "unknown";
     }
 
-    function formatUpdated(value) {
-      if (!value) return "";
-      const d = new Date(value);
-      if (Number.isNaN(d.getTime())) return "";
-      return "Updated " + d.toLocaleDateString(undefined, {
-        day: "numeric",
-        month: "short"
-      });
+    // Notion dates arrive as "YYYY-MM-DD". Parse them as local calendar days;
+    // new Date("YYYY-MM-DD") is UTC midnight and can land on the wrong day.
+    function parseDay(value) {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ""));
+      return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+    }
+
+    function daysBetween(from, to) {
+      return Math.round((to - from) / 86400000);
+    }
+
+    function today() {
+      const now = new Date();
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    }
+
+    function shortDate(d) {
+      return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    }
+
+    function quietDays(quest) {
+      const d = parseDay(quest.updatedAt);
+      return d ? Math.max(0, daysBetween(d, today())) : null;
+    }
+
+    function freshnessText(days) {
+      if (days === null) return "";
+      if (days === 0) return "Evidence today";
+      if (days === 1) return "Evidence yesterday";
+      if (days > QUIET_AFTER_DAYS) return `Quiet for ${days} days`;
+      return `Evidence ${days} days ago`;
+    }
+
+    function countdownText(quest) {
+      const target = parseDay(quest.targetDate);
+      if (!target) return "";
+      const days = daysBetween(today(), target);
+      const when = shortDate(target);
+      if (days > 1) return `${days} days to go · ${when}`;
+      if (days === 1) return `Tomorrow · ${when}`;
+      if (days === 0) return `Today is the day · ${when}`;
+      return `${-days} days past target · ${when}`;
+    }
+
+    function renderPhase(phase) {
+      const current = PHASES.indexOf(phase);
+      el.phase.replaceChildren(...(current < 0 ? [] : PHASES.map((name, i) => {
+        const step = document.createElement("span");
+        step.className = "phase-step" + (i < current ? " done" : i === current ? " current" : "");
+        step.textContent = name;
+        return step;
+      })));
+      el.phase.classList.toggle("hidden", current < 0);
+    }
+
+    function setText(node, text, max) {
+      node.textContent = max ? clipLine(text, max) : text;
+      node.title = text;
+      node.classList.toggle("hidden", !text);
     }
 
     // The card shows exactly ONE body line. latestEvidence is the display
@@ -290,18 +430,33 @@
     function renderQuest(quest) {
       if (!quest) return;
 
+      renderPhase(quest.questPhase);
       el.title.textContent = quest.questTitle || "";
+
+      const quiet = quietDays(quest);
+      const isQuiet = quiet !== null && quiet > QUIET_AFTER_DAYS;
       el.status.textContent = quest.status || "NOT ENOUGH INFORMATION";
-      el.status.className = "status " + statusClass(quest.status);
+      el.status.className = "status " + statusClass(quest.status) + (isQuiet ? " stale" : "");
+      el.freshness.textContent = freshnessText(quiet);
+      el.freshness.classList.toggle("quiet", isQuiet);
+      el.freshness.classList.toggle("hidden", quiet === null);
 
-      const line = cardLine(quest);
-      el.line.textContent = clipLine(line);
-      el.line.title = line;
-      el.line.classList.toggle("hidden", !line);
+      // Next move and the pass/fail question are written by hand in Notion,
+      // so they are optional: a quest without them simply hides the row.
+      const next = String(quest.nextMove || "").trim();
+      el.next.replaceChildren();
+      if (next) {
+        const label = document.createElement("span");
+        label.className = "next-label";
+        label.textContent = "Next";
+        el.next.append(label, clipLine(next, NEXT_MAX_CHARS));
+      }
+      el.next.title = next;
+      el.next.classList.toggle("hidden", !next);
 
-      const updated = formatUpdated(quest.updatedAt);
-      el.updated.textContent = updated;
-      el.updated.classList.toggle("hidden", !updated);
+      setText(el.line, cardLine(quest), LINE_MAX_CHARS);
+      setText(el.countdown, countdownText(quest));
+      setText(el.passFail, String(quest.passFailQuestion || "").trim(), PASS_FAIL_MAX_CHARS);
 
       el.quote.textContent = quest.quote ? `“${quest.quote}”` : "";
       el.author.textContent = quest.quoteAuthor || "";
