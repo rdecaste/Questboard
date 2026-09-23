@@ -220,8 +220,11 @@
 
     .section { margin-top: calc(var(--u) * 1.7); }
 
+    /* balance evens out the lines so the narrow column never leaves a single
+       word stranded on the last one ("…1 interval / run"). */
     .section-body {
       margin-top: calc(var(--u) * .5);
+      text-wrap: balance;
       display: -webkit-box;
       -webkit-box-orient: vertical;
       -webkit-line-clamp: 2;
