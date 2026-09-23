@@ -103,13 +103,12 @@
       border-bottom: 1px solid rgba(255,255,255,.22);
     }
 
-    /* fitClock() overrides font-size so the widest possible time spans the
-       panel; the clamp is only the size shown before the font has loaded.
-       The small negative margin cancels Orbitron's left side-bearing so the
-       digits line up with the title's left edge. */
+    /* fitClock() sets font-size so the widest possible time spans the panel;
+       the clamp is only the size shown before the font has loaded.
+       justifyClock() sets margin-left, letter-spacing and margin-right each
+       minute so the digits' ink runs edge to edge. */
     .clock-time {
       display: inline-block;
-      margin-left: -.035em;
       font-family: var(--hud-font);
       font-size: clamp(72px, 8.4vw, 168px);
       line-height: .82;
@@ -666,7 +665,10 @@
         minute: "2-digit",
         hourCycle: "h23"
       });
-      clockTime.textContent = time;
+      if (clockTime.textContent !== time) {
+        clockTime.textContent = time;
+        justifyClock();
+      }
       clockDate.textContent = now.toLocaleDateString(undefined, {
         weekday: "long",
         day: "numeric",
@@ -674,14 +676,54 @@
       });
     }
 
+    const inkCtx = document.createElement("canvas").getContext("2d");
+
+    // Make the current time's ink run exactly from the panel's left edge to
+    // its right edge.
+    //
+    // Width: spread the leftover width between the characters. Scaling the
+    // font instead would nearly double the clock's height at 11:11 and push
+    // the whole card around every minute; spacing keeps the height fixed.
+    // letter-spacing is also added after the last character, so a matching
+    // negative right margin keeps that trailing gap out of the layout.
+    //
+    // Edges: Orbitron's side-bearings differ per digit (about .06em of empty
+    // space beside "0" or "8", almost none beside "1" or "7"), so the first
+    // and last characters are measured on a canvas and their bearings
+    // cancelled. Without this the clock drifts off the title's left edge and
+    // stops short of the divider depending on the time.
+    function justifyClock() {
+      const text = clockTime.textContent;
+      const style = getComputedStyle(clockTime);
+      inkCtx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+      const first = inkCtx.measureText(text.slice(0, 1));
+      const last = inkCtx.measureText(text.slice(-1));
+      const leftBearing = -first.actualBoundingBoxLeft;
+      const rightBearing = last.width - last.actualBoundingBoxRight;
+
+      clockTime.style.marginLeft = -leftBearing + "px";
+      clockTime.style.letterSpacing = "0px";
+      clockTime.style.marginRight = "0px";
+      const gaps = text.length - 1;
+      const extra = clockTime.parentElement.getBoundingClientRect().right
+        - clockTime.getBoundingClientRect().right + rightBearing;
+      if (gaps < 1 || extra <= 0) return;
+      const gap = extra / gaps;
+      clockTime.style.letterSpacing = gap + "px";
+      clockTime.style.marginRight = -gap + "px";
+    }
+
     // Size the clock so the widest possible time spans the panel exactly.
     // Orbitron's digits are proportional ("1" is half the width of "0"), so
-    // measure the widest digit and the separator at 100px and scale from that:
-    // the size stays fixed all day, the left edge stays on the title's edge,
-    // and only narrow times like 11:11 end short of the divider.
+    // measure the widest digit and the separator at 100px and scale from that.
+    // The size then stays fixed all day and justifyClock() fills whatever
+    // width a narrower time leaves over.
     function fitClock() {
       const target = clockTime.parentElement.clientWidth;
       clockTime.style.fontSize = "100px";
+      clockTime.style.marginLeft = "0px";
+      clockTime.style.letterSpacing = "0px";
+      clockTime.style.marginRight = "0px";
       const measure = text => {
         clockTime.textContent = text;
         return clockTime.getBoundingClientRect().width;
@@ -690,9 +732,11 @@
       for (let d = 0; d <= 9; d++) digit = Math.max(digit, measure(String(d)));
       const sep = measure(":");
 
+      clockTime.textContent = "";
+      if (target && digit) {
+        clockTime.style.fontSize = (100 * target / (4 * digit + sep)) + "px";
+      }
       renderClock();
-      if (!target || !digit) return;
-      clockTime.style.fontSize = (100 * target / (4 * digit + sep)) + "px";
     }
 
     function nextQuest() {
