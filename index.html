@@ -9,10 +9,13 @@
   <title>Active Quest Board</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;800;900&display=swap" />
 
   <style>
     :root {
+      /* Display face for the clock, title and labels; the evidence line and
+         the weekly question stay in the body sans for readability. */
+      --hud-font: "Orbitron", Inter, -apple-system, BlinkMacSystemFont, sans-serif;
       --text: #fff;
       --muted: rgba(255,255,255,.66);
       --safe-top: env(safe-area-inset-top, 0px);
@@ -95,36 +98,33 @@
     }
 
     .clock {
-      margin-bottom: clamp(22px, 2.6vw, 48px);
-      text-align: center;
+      margin-bottom: clamp(18px, 1.8vw, 32px);
+      padding-bottom: clamp(16px, 1.6vw, 28px);
+      border-bottom: 1px solid rgba(255,255,255,.22);
     }
 
-    /* fitClock() overrides font-size so the digits span the panel width;
-       the clamp is only the size shown before the font has loaded. */
+    /* fitClock() overrides font-size so the widest possible time spans the
+       panel; the clamp is only the size shown before the font has loaded.
+       The small negative margin cancels Orbitron's left side-bearing so the
+       digits line up with the title's left edge. */
     .clock-time {
       display: inline-block;
-      font-family: "Orbitron", Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+      margin-left: -.035em;
+      font-family: var(--hud-font);
       font-size: clamp(72px, 8.4vw, 168px);
       line-height: .82;
       font-weight: 900;
       white-space: nowrap;
     }
 
-    /* Orbitron has no tabular figures ("1" is half the width of "0"), so each
-       digit sits in a fixed cell as wide as the widest digit. The clock then
-       spans the same width at 11:11 as at 20:08. */
-    .clock-digit {
-      display: inline-block;
-      width: var(--digit-w, .8em);
-      text-align: center;
-    }
-
     .clock-date {
       margin-top: 14px;
-      font-size: clamp(13px, 1vw, 20px);
-      font-weight: 600;
-      letter-spacing: .06em;
-      color: rgba(255,255,255,.72);
+      font-family: var(--hud-font);
+      font-size: clamp(11px, .82vw, 16px);
+      font-weight: 700;
+      letter-spacing: .22em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,.7);
     }
 
     .phase-track {
@@ -132,9 +132,10 @@
       align-items: center;
       gap: 10px;
       margin-bottom: 14px;
+      font-family: var(--hud-font);
       font-size: clamp(10px, .72vw, 14px);
-      font-weight: 750;
-      letter-spacing: .17em;
+      font-weight: 700;
+      letter-spacing: .2em;
       text-transform: uppercase;
     }
 
@@ -154,10 +155,12 @@
 
     .title {
       margin: 0 0 22px;
-      font-size: clamp(34px, 3.1vw, 64px);
-      line-height: 1.02;
+      font-family: var(--hud-font);
+      font-size: clamp(24px, 2.15vw, 44px);
+      line-height: 1.12;
       font-weight: 800;
-      letter-spacing: -.035em;
+      letter-spacing: .01em;
+      text-transform: uppercase;
       text-wrap: balance;
     }
 
@@ -175,6 +178,7 @@
       gap: 7px;
       padding: 5px 11px;
       border-radius: 999px;
+      font-family: var(--hud-font);
       font-size: clamp(10px, .74vw, 14px);
       font-weight: 800;
       letter-spacing: .11em;
@@ -205,8 +209,10 @@
     .status.stale { opacity: .5; }
 
     .freshness {
-      font-size: clamp(11px, .8vw, 15px);
-      font-weight: 650;
+      font-family: var(--hud-font);
+      font-size: clamp(10px, .72vw, 14px);
+      font-weight: 700;
+      letter-spacing: .08em;
       color: rgba(255,255,255,.66);
     }
 
@@ -221,6 +227,7 @@
 
     .next-label {
       margin-right: 10px;
+      font-family: var(--hud-font);
       font-size: .62em;
       font-weight: 800;
       letter-spacing: .17em;
@@ -247,9 +254,11 @@
 
     .countdown {
       margin-top: 16px;
-      font-size: clamp(12px, .9vw, 17px);
+      font-family: var(--hud-font);
+      font-size: clamp(11px, .8vw, 15px);
       font-weight: 700;
-      letter-spacing: .04em;
+      letter-spacing: .12em;
+      text-transform: uppercase;
       color: rgba(255,255,255,.82);
     }
 
@@ -657,15 +666,7 @@
         minute: "2-digit",
         hourCycle: "h23"
       });
-      if (clockTime.dataset.time !== time) {
-        clockTime.dataset.time = time;
-        clockTime.replaceChildren(...Array.from(time, ch => {
-          const cell = document.createElement("span");
-          if (/\d/.test(ch)) cell.className = "clock-digit";
-          cell.textContent = ch;
-          return cell;
-        }));
-      }
+      clockTime.textContent = time;
       clockDate.textContent = now.toLocaleDateString(undefined, {
         weekday: "long",
         day: "numeric",
@@ -673,9 +674,11 @@
       });
     }
 
-    // Size the clock so it spans the panel width exactly: measure the widest
-    // digit and the separator at 100px, set the digit cell width from that, and
-    // scale the font so four cells plus the separator fill the panel.
+    // Size the clock so the widest possible time spans the panel exactly.
+    // Orbitron's digits are proportional ("1" is half the width of "0"), so
+    // measure the widest digit and the separator at 100px and scale from that:
+    // the size stays fixed all day, the left edge stays on the title's edge,
+    // and only narrow times like 11:11 end short of the divider.
     function fitClock() {
       const target = clockTime.parentElement.clientWidth;
       clockTime.style.fontSize = "100px";
@@ -687,10 +690,8 @@
       for (let d = 0; d <= 9; d++) digit = Math.max(digit, measure(String(d)));
       const sep = measure(":");
 
-      delete clockTime.dataset.time;
       renderClock();
       if (!target || !digit) return;
-      clockTime.style.setProperty("--digit-w", (digit / 100) + "em");
       clockTime.style.fontSize = (100 * target / (4 * digit + sep)) + "px";
     }
 
