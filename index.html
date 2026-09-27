@@ -439,7 +439,10 @@
   </main>
 
   <script>
-    const DATA_URL = "./data.json";
+    // Built by the Quest Engine (Cloudflare Worker) after the nightly quest match;
+    // data.json in this repo is no longer updated.
+    const ENGINE_URL = "https://quest-engine.quest-engine.workers.dev";
+    const DATA_URL = ENGINE_URL + "/questboard";
     const VIDEO_LIST_URL = "https://res.cloudinary.com/a3xk0plk/video/list/quest-board-animated.json";
     const REFRESH_MS = 15000;
     const ROTATE_MS = 30000;
