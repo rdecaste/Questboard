@@ -258,6 +258,60 @@
       color: rgba(255,255,255,.8);
     }
 
+    /* Health signals: up to three one-line facts from Workouts, Body Metrics
+       and the food taps, built by the Quest Engine for the two health quests.
+       Amber needs attention, green is on track, grey is for information. */
+    .signals-body {
+      display: flex;
+      flex-direction: column;
+      gap: calc(var(--u) * .35);
+      margin-bottom: 0;
+      padding: 0;
+      list-style: none;
+      -webkit-line-clamp: unset;
+      line-clamp: unset;
+      font-size: calc(var(--u) * 1.15);
+      font-weight: 500;
+      line-height: 1.3;
+      color: rgba(255,255,255,.9);
+    }
+
+    .signals-body li {
+      display: flex;
+      align-items: baseline;
+      gap: calc(var(--u) * .6);
+      min-width: 0;
+    }
+
+    .signals-body li span {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .signals-body li::before {
+      content: "";
+      flex: none;
+      width: calc(var(--u) * .55);
+      height: calc(var(--u) * .55);
+      border-radius: 50%;
+      background: rgba(255,255,255,.45);
+      transform: translateY(calc(var(--u) * -.08));
+    }
+
+    .signals-body li.watch::before { background: #ffb020; }
+    .signals-body li.good::before { background: #4ade80; }
+
+    /* A card with signals has four sections, so the column tightens to keep
+       all of them above the bottom edge: smaller gaps, evidence at two lines. */
+    .quest:has(.with-signals) { margin-top: calc(var(--u) * 2); }
+    .sections.with-signals { margin-top: calc(var(--u) * 1.2); }
+    .sections.with-signals .section { margin-top: calc(var(--u) * 1.1); }
+    .sections.with-signals .evidence-body {
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+    }
+
     /* ---- Quote ---------------------------------------------------------- */
 
     .quote {
@@ -402,7 +456,7 @@
         <div id="phaseTrack" class="phase-track label"></div>
         <div id="completeBadge" class="complete-badge label hidden">🏆 Quest complete</div>
 
-        <div class="sections">
+        <div id="sections" class="sections">
           <div id="statsSection" class="section hidden">
             <div class="label">Completed</div>
             <div id="stats" class="section-body stats-body"></div>
@@ -426,6 +480,11 @@
           <div id="testSection" class="section">
             <div class="label">This week</div>
             <div id="passFail" class="section-body test-body"></div>
+          </div>
+
+          <div id="signalsSection" class="section hidden">
+            <div class="label">Signals</div>
+            <ul id="signals" class="section-body signals-body"></ul>
           </div>
         </div>
       </div>
@@ -478,6 +537,9 @@
       line: document.getElementById("questLine"),
       testSection: document.getElementById("testSection"),
       passFail: document.getElementById("passFail"),
+      sections: document.getElementById("sections"),
+      signalsSection: document.getElementById("signalsSection"),
+      signals: document.getElementById("signals"),
       app: document.querySelector(".app"),
       sweep: document.getElementById("sweep"),
       badge: document.getElementById("completeBadge"),
@@ -569,6 +631,22 @@
       return parts.filter(Boolean).join(" · ");
     }
 
+    // Health signals ({text, level}) are only set on the two health quests.
+    function renderSignals(signals) {
+      const list = Array.isArray(signals) ? signals.filter(s => s && s.text).slice(0, 3) : [];
+      el.signals.replaceChildren(...list.map(s => {
+        const li = document.createElement("li");
+        li.className = ["watch", "good"].includes(s.level) ? s.level : "info";
+        const text = document.createElement("span");
+        text.textContent = clipLine(s.text, 70);
+        li.title = s.text;
+        li.append(text);
+        return li;
+      }));
+      el.signalsSection.classList.toggle("hidden", !list.length);
+      el.sections.classList.toggle("with-signals", list.length > 0);
+    }
+
     let sweptId = "";
 
     function renderQuest(quest) {
@@ -605,6 +683,8 @@
       setSection(el.evidenceSection, el.line, showEvidence ? cardLine(quest) : "", LINE_MAX_CHARS);
 
       setSection(el.testSection, el.passFail, complete ? "" : String(quest.passFailQuestion || "").trim(), PASS_FAIL_MAX_CHARS);
+
+      renderSignals(complete ? [] : quest.signals);
 
       el.quote.textContent = quest.quote ? `“${quest.quote}”` : "";
       el.author.textContent = quest.quoteAuthor || "";
